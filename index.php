@@ -12,23 +12,61 @@ function generateProjectId() {
     return substr(md5(uniqid(rand(), true)), 0, 8);
 }
 
-// Sauvegarde des données
-function saveChapterData($videoId, $chapters, $projectId = null) {
-    global $dataDir;
-    
-    if (!$projectId) {
-        $projectId = generateProjectId();
+// Récupération du titre de la vidéo YouTube
+function getYouTubeTitle($videoId) {
+    // Vérifier si l'ID est valide
+    if (empty($videoId)) {
+        return 'Vidéo YouTube';
     }
     
-    $data = [
-        'video_id' => $videoId,
-        'chapters' => $chapters,
-        'created_at' => date('Y-m-d H:i:s'),
-        'updated_at' => date('Y-m-d H:i:s')
-    ];
+    // Méthode 1 : Avec noembed.com (plus fiable)
+    $url = "https://noembed.com/embed?url=https://www.youtube.com/watch?v=" . $videoId;
     
-    file_put_contents($dataDir . '/' . $projectId . '.json', json_encode($data, JSON_PRETTY_PRINT));
-    return $projectId;
+    $context = stream_context_create([
+        'http' => [
+            'timeout' => 10,
+            'user_agent' => 'Mozilla/5.0',
+            'ignore_errors' => true
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false
+        ]
+    ]);
+    
+    $response = @file_get_contents($url, false, $context);
+    if ($response) {
+        $data = json_decode($response, true);
+        if (isset($data['title']) && !empty($data['title'])) {
+            return $data['title'];
+        }
+    }
+    
+    // Méthode 2 : YouTube oEmbed avec cURL
+    if (function_exists('curl_init')) {
+        $url = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=" . $videoId . "&format=json";
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode == 200 && $response) {
+            $data = json_decode($response, true);
+            if (isset($data['title']) && !empty($data['title'])) {
+                return $data['title'];
+            }
+        }
+    }
+    
+    return 'Vidéo YouTube';
 }
 
 // Chargement des données
@@ -53,9 +91,21 @@ function getAllProjects() {
             $data = json_decode(file_get_contents($file), true);
             if ($data) {
                 $projectId = basename($file, '.json');
+                
+                // Si le titre n'existe pas, le récupérer
+                $videoTitle = $data['video_title'] ?? null;
+                if (!$videoTitle && isset($data['video_id'])) {
+                    $videoTitle = getYouTubeTitle($data['video_id']);
+                    
+                    // Mettre à jour le fichier avec le titre
+                    $data['video_title'] = $videoTitle;
+                    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
+                }
+                
                 $projects[] = [
                     'id' => $projectId,
                     'video_id' => $data['video_id'],
+                    'video_title' => $videoTitle ?? 'Vidéo sans titre',
                     'chapters_count' => count($data['chapters']),
                     'created_at' => $data['created_at'] ?? 'Non défini',
                     'updated_at' => $data['updated_at'] ?? $data['created_at'] ?? 'Non défini'
@@ -74,6 +124,7 @@ function getAllProjects() {
 
 // Initialisation des variables
 $videoId = '';
+$videoTitle = '';
 $chapters = [];
 $projectId = $_GET['p'] ?? null;
 $shareUrl = '';
@@ -98,8 +149,10 @@ if (isset($_GET['new'])) {
 // Chargement d'un projet existant
 if ($projectId && $data = loadChapterData($projectId)) {
     $videoId = $data['video_id'];
+    $videoTitle = $data['video_title'] ?? getYouTubeTitle($videoId);
     $chapters = $data['chapters'];
     $_SESSION['video_id'] = $videoId;
+    $_SESSION['video_title'] = $videoTitle;
     $_SESSION['project_id'] = $projectId;
     
     // Générer les URLs pour un projet existant
@@ -116,7 +169,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         preg_match('/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/', $url, $matches);
         if (isset($matches[1])) {
             $videoId = $matches[1];
+            $videoTitle = getYouTubeTitle($videoId);
             $_SESSION['video_id'] = $videoId;
+            $_SESSION['video_title'] = $videoTitle;
             // Reset du projet si nouvelle vidéo
             unset($_SESSION['project_id']);
             $chapters = [];
@@ -127,8 +182,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['save_chapters']) && isset($_SESSION['video_id'])) {
         $chapters = json_decode($_POST['chapters_data'], true);
         $projectId = $_SESSION['project_id'] ?? null;
-        $projectId = saveChapterData($_SESSION['video_id'], $chapters, $projectId);
+        
+        // Si on met à jour un projet existant, garder le titre existant
+        $existingData = null;
+        $existingTitle = null;
+        if ($projectId && $existingData = loadChapterData($projectId)) {
+            $existingTitle = $existingData['video_title'] ?? null;
+        }
+        
+        // Sauvegarder avec le titre existant ou le récupérer si besoin
+        $videoTitle = $existingTitle ?? $_SESSION['video_title'] ?? getYouTubeTitle($_SESSION['video_id']);
+        
+        $data = [
+            'video_id' => $_SESSION['video_id'],
+            'video_title' => $videoTitle,
+            'chapters' => $chapters,
+            'created_at' => isset($existingData['created_at']) ? $existingData['created_at'] : date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+        
+        if (!$projectId) {
+            $projectId = generateProjectId();
+        }
+        
+        file_put_contents($dataDir . '/' . $projectId . '.json', json_encode($data, JSON_PRETTY_PRINT));
         $_SESSION['project_id'] = $projectId;
+        $_SESSION['video_title'] = $videoTitle;
         
         // Générer les URLs de partage
         $shareUrl = $baseUrl . "/index.php?p=" . $projectId;
@@ -139,10 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 } elseif (isset($_SESSION['video_id'])) {
     // Chargement depuis la session
     $videoId = $_SESSION['video_id'];
+    $videoTitle = $_SESSION['video_title'] ?? getYouTubeTitle($videoId);
     if (isset($_SESSION['project_id'])) {
         $projectId = $_SESSION['project_id'];
         if ($data = loadChapterData($projectId)) {
             $chapters = $data['chapters'];
+            $videoTitle = $data['video_title'] ?? $videoTitle;
             // Générer les URLs pour le projet en session
             $shareUrl = $baseUrl . "/index.php?p=" . $projectId;
             $embedUrl = $baseUrl . "/viewer.php?p=" . $projectId;
@@ -163,6 +244,7 @@ if (!file_exists($file)) die("Projet non trouvé");
 
 $data = json_decode(file_get_contents($file), true);
 $videoId = $data["video_id"];
+$videoTitle = $data["video_title"] ?? "Vidéo YouTube";
 $chapters = $data["chapters"];
 ?>
 <!DOCTYPE html>
@@ -170,7 +252,7 @@ $chapters = $data["chapters"];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lecteur avec chapitres</title>
+    <title><?php echo htmlspecialchars($videoTitle); ?> - Chapitres</title>
     <link rel="stylesheet" href="viewer-styles.css">
 </head>
 <body>
@@ -182,6 +264,9 @@ $chapters = $data["chapters"];
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowfullscreen>
                 </iframe>
+            </div>
+            <div class="video-viewer-info">
+                <h1><?php echo htmlspecialchars($videoTitle); ?></h1>
             </div>
         </div>
         <div class="chapters-sidebar">
@@ -311,7 +396,10 @@ if (!file_exists('viewer.php')) {
                     <img src="https://img.youtube.com/vi/<?php echo $videoId; ?>/default.jpg" 
                          alt="Miniature" 
                          class="video-mini-thumbnail">
-                    <span class="video-id-info">ID: <?php echo $videoId; ?></span>
+                    <div class="video-info-text">
+                        <h3 class="video-main-title"><?php echo isset($videoTitle) && !empty($videoTitle) ? htmlspecialchars($videoTitle) : 'Vidéo YouTube'; ?></h3>
+                        <span class="video-id-info">ID: <?php echo $videoId; ?></span>
+                    </div>
                 </div>
             </div>
 
@@ -457,7 +545,15 @@ if (!file_exists('viewer.php')) {
                             <span class="project-id">ID: <?php echo $project['id']; ?></span>
                         </div>
                         <div class="project-card-body">
-                            <p class="video-id">Vidéo: <?php echo $project['video_id']; ?></p>
+                            <h4 class="video-title"><?php 
+                                $displayTitle = htmlspecialchars($project['video_title']);
+                                if ($displayTitle === 'Vidéo sans titre' || empty($displayTitle)) {
+                                    echo '<span style="opacity: 0.6;">Titre en cours de récupération...</span>';
+                                } else {
+                                    echo $displayTitle;
+                                }
+                            ?></h4>
+                            <p class="video-id">ID vidéo: <?php echo $project['video_id']; ?></p>
                             <p class="project-date">Modifié: <?php echo date('d/m/Y H:i', strtotime($project['updated_at'])); ?></p>
                         </div>
                         <div class="project-card-footer">
