@@ -1,10 +1,17 @@
-# 📺 YouTube Chapters Creator
+# 📺 YouTube Chapters Studio
 
 Une application web PHP permettant de créer, gérer et partager facilement des chapitres pour vos vidéos YouTube.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+[![GitHub](https://img.shields.io/badge/GitHub-youtube--chapters--studio-181717.svg?logo=github)](https://github.com/Florent-ARENE/youtube-chapters-studio)
+![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.0-777BB4.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+## 🌐 Liens utiles
+
+- **Repository GitHub** : [https://github.com/Florent-ARENE/youtube-chapters-studio](https://github.com/Florent-ARENE/youtube-chapters-studio)
+- **Signaler un bug** : [Issues](https://github.com/Florent-ARENE/youtube-chapters-studio/issues)
+- **Proposer une fonctionnalité** : [Discussions](https://github.com/Florent-ARENE/youtube-chapters-studio/discussions)
 
 ## 🎯 Fonctionnalités principales
 
@@ -14,7 +21,22 @@ Une application web PHP permettant de créer, gérer et partager facilement des 
 - 🔗 **Partage facile** : Liens partageables et code d'intégration iframe
 - 📱 **Interface responsive** : Fonctionne sur tous les appareils
 - 🖼️ **Miniatures YouTube** : Affichage automatique des miniatures des vidéos
+- 📝 **Titres des vidéos** : Récupération automatique des titres YouTube
 - 📋 **Export optimisé** : Format prêt pour la description YouTube
+- 📂 **Gestion de projets** : Liste visuelle de tous vos projets avec miniatures et titres
+
+## 📸 Captures d'écran
+
+### Interface principale
+- Liste des projets avec miniatures et titres
+- Interface d'édition avec player YouTube intégré
+- Panneau de création de chapitres avec capture automatique du temps
+
+### Fonctionnalités visuelles
+- **Miniatures YouTube** : Chaque projet affiche la miniature de la vidéo
+- **Titres automatiques** : Les titres des vidéos sont récupérés via l'API YouTube
+- **Effet hover** : Animation au survol des cartes de projet
+- **Badge de chapitres** : Nombre de chapitres affiché sur la miniature
 
 ## 🚀 Installation
 
@@ -28,8 +50,8 @@ Une application web PHP permettant de créer, gérer et partager facilement des 
 
 1. **Clonez ou téléchargez le projet**
    ```bash
-   git clone https://github.com/votre-repo/youtube-chapters-creator.git
-   cd youtube-chapters-creator
+   git clone https://github.com/Florent-ARENE/youtube-chapters-studio.git
+   cd youtube-chapters-studio
    ```
 
 2. **Configurez votre serveur web**
@@ -43,13 +65,13 @@ Une application web PHP permettant de créer, gérer et partager facilement des 
 
 4. **Accédez à l'application**
    ```
-   http://votre-domaine.com/Youtube/
+   http://votre-domaine.com/youtube-chapters-studio/
    ```
 
 ## 📁 Structure du projet
 
 ```
-Youtube/
+youtube-chapters-studio/
 ├── index.php              # Interface principale
 ├── styles.css             # Styles de l'interface principale
 ├── viewer.php             # Interface de visualisation (généré automatiquement)
@@ -58,6 +80,8 @@ Youtube/
 │   ├── abc12345.json
 │   ├── def67890.json
 │   └── ...
+├── update-titles.php      # Script de mise à jour des titres (optionnel)
+├── test-title.php         # Script de test des APIs (optionnel)
 └── README.md              # Ce fichier
 ```
 
@@ -68,6 +92,7 @@ Youtube/
 1. Collez l'URL de votre vidéo YouTube dans le champ prévu
 2. Cliquez sur "Charger la vidéo"
 3. La vidéo s'affiche avec l'interface de création
+4. Le titre de la vidéo est récupéré automatiquement
 
 ### 2. Ajouter des chapitres
 
@@ -89,7 +114,14 @@ Youtube/
 - **Naviguer** : Cliquez sur le timestamp pour aller à ce moment
 - **Trier** : Les chapitres sont triés automatiquement par temps
 
-### 4. Sauvegarder et partager
+### 4. Gérer vos projets
+
+- **Liste visuelle** : Tous vos projets avec miniatures et titres
+- **Recherche rapide** : Identifiez vos vidéos grâce aux miniatures
+- **Actions rapides** : Éditer, Voir ou Copier le lien
+- **Tri chronologique** : Projets récents en premier
+
+### 5. Sauvegarder et partager
 
 1. Cliquez sur "💾 Sauvegarder les chapitres"
 2. Copiez le lien de partage ou le code iframe
@@ -142,6 +174,7 @@ Les projets sont stockés en JSON avec la structure suivante :
 ```json
 {
   "video_id": "dQw4w9WgXcQ",
+  "video_title": "Rick Astley - Never Gonna Give You Up",
   "chapters": [
     {
       "time": 0,
@@ -157,12 +190,25 @@ Les projets sont stockés en JSON avec la structure suivante :
 }
 ```
 
-### API YouTube
+### APIs utilisées
 
-L'application utilise :
-- YouTube Player API pour la navigation
-- URLs standardisées pour les miniatures
-- Embed responsive avec paramètres optimisés
+L'application utilise plusieurs services pour récupérer les informations :
+- **YouTube Player API** : Pour la navigation et le contrôle de la vidéo
+- **YouTube oEmbed** : Pour récupérer les titres des vidéos
+- **noembed.com** : Service alternatif pour les métadonnées (fallback)
+- **Miniatures YouTube** : URLs standardisées (img.youtube.com)
+
+### Scripts de maintenance
+
+**update-titles.php** : Met à jour les titres manquants pour les projets existants
+```bash
+php update-titles.php
+```
+
+**test-title.php** : Teste la récupération des titres YouTube
+```bash
+php test-title.php
+```
 
 ## 📋 Format d'export
 
@@ -195,16 +241,43 @@ Chapitres :
 - Certaines vidéos n'ont pas de miniatures personnalisées
 - Un emoji 🎬 s'affiche à la place
 
+### Les titres affichent "Vidéo sans titre"
+- Exécutez `php update-titles.php` pour récupérer les titres manquants
+- Ou rechargez simplement la page (récupération automatique)
+- Vérifiez que votre serveur peut accéder aux APIs externes
+
 ## 🚀 Améliorations futures
 
 - [ ] Système d'authentification utilisateur
-- [ ] Import de chapitres depuis une description YouTube
+- [ ] Import de chapitres depuis une description YouTube existante
 - [ ] Export vers d'autres formats (SRT, VTT)
 - [ ] Support multi-langues
-- [ ] Mode sombre/clair
-- [ ] Raccourcis clavier
-- [ ] Prévisualisation en temps réel
-- [ ] Intégration avec l'API YouTube Data
+- [ ] Mode sombre/clair (actuellement sombre uniquement)
+- [ ] Raccourcis clavier pour la navigation
+- [ ] Prévisualisation en temps réel des chapitres
+- [ ] Intégration avec l'API YouTube Data v3
+- [ ] Recherche dans les projets
+- [ ] Tags et catégories pour organiser les projets
+- [ ] Statistiques d'utilisation des chapitres
+- [ ] Export en masse de plusieurs projets
+- [ ] Sauvegarde/restauration des projets
+- [ ] Support des playlists YouTube
+
+## 📝 Changelog
+
+### Version 1.1.0 (Janvier 2025)
+- ✨ Ajout de la récupération automatique des titres YouTube
+- 🖼️ Intégration des miniatures dans la liste des projets
+- 🎨 Amélioration de l'interface avec effets visuels
+- 🔧 Scripts de maintenance pour les titres manquants
+- 📱 Meilleure adaptation mobile
+
+### Version 1.0.0 (Janvier 2025)
+- 🎉 Version initiale
+- ✅ Création et édition de chapitres
+- 💾 Sauvegarde persistante
+- 🔗 Système de partage
+- 📋 Export pour YouTube
 
 ## 📝 Licence
 
@@ -213,11 +286,20 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 ## 👥 Contribution
 
 Les contributions sont les bienvenues ! N'hésitez pas à :
-1. Fork le projet
+
+1. Fork le projet sur [GitHub](https://github.com/Florent-ARENE/youtube-chapters-studio)
 2. Créer une branche (`git checkout -b feature/AmazingFeature`)
 3. Commit vos changements (`git commit -m 'Add some AmazingFeature'`)
 4. Push sur la branche (`git push origin feature/AmazingFeature`)
 5. Ouvrir une Pull Request
+
+### 🐛 Signaler un bug
+
+Vous avez trouvé un bug ? [Ouvrez une issue](https://github.com/Florent-ARENE/youtube-chapters-studio/issues) sur GitHub.
+
+### 💡 Suggestions
+
+Des idées d'amélioration ? [Créez une discussion](https://github.com/Florent-ARENE/youtube-chapters-studio/discussions) sur GitHub.
 
 ## 🙏 Remerciements
 
