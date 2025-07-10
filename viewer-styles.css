@@ -1,0 +1,165 @@
+/* Reset et styles de base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #0f0f0f;
+    color: #ffffff;
+}
+
+/* Container principal */
+.viewer-container {
+    display: flex;
+    height: 100vh;
+}
+
+/* Section vidéo */
+.video-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+}
+
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+}
+
+.video-wrapper iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.video-viewer-info {
+    padding: 20px;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+}
+
+.video-viewer-info h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+    line-height: 1.3;
+}
+
+/* Sidebar des chapitres */
+.chapters-sidebar {
+    width: 300px;
+    background: #1a1a1a;
+    overflow-y: auto;
+    padding: 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #444 #1a1a1a;
+}
+
+.chapters-sidebar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chapters-sidebar::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+.chapters-sidebar::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.chapters-sidebar::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Titre des chapitres */
+.chapters-title {
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #333;
+}
+
+/* Items de chapitre */
+.chapter-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: #2a2a2a;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.chapter-item:hover {
+    background: #333;
+    transform: translateX(5px);
+}
+
+.chapter-item.chapter-elu {
+    background: #426a92;
+    border-left: 4px solid #aed3ff;
+}
+
+.chapter-item.chapter-elu:hover {
+    background: #5280a8;
+}
+
+.chapter-item.chapter-vote {
+    background: #827824;
+    border-left: 4px solid #ffd700;
+}
+
+.chapter-item.chapter-vote:hover {
+    background: #968834;
+}
+
+.chapter-time {
+    color: #ff0000;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+
+.chapter-title {
+    color: #ccc;
+    font-size: 0.95rem;
+}
+
+.elu-icon, .vote-icon {
+    display: inline-block;
+    margin-right: 5px;
+}
+
+.elu-info {
+    font-size: 0.8rem;
+    color: #999;
+    margin-top: 4px;
+    font-style: italic;
+    line-height: 1.3;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .viewer-container {
+        flex-direction: column;
+    }
+    
+    .chapters-sidebar {
+        width: 100%;
+        height: 200px;
+        border-top: 1px solid #333;
+    }
+    
+    .video-viewer-info h1 {
+        font-size: 16px;
+    }
+}

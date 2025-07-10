@@ -1,0 +1,10 @@
+# ======================
+# setup/.htaccess
+# ======================
+# Zone d'installation - À sécuriser après installation
+# Décommentez les lignes suivantes après l'installation :
+# Order Deny,Allow
+# Deny from all
+
+# Alternative : Redirection après installation
+# RedirectMatch 403 ^.*$
