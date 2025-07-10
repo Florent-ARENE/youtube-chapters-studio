@@ -1,5 +1,0 @@
-# Protection basique
-Options -Indexes
-
-# Désactiver l'affichage des erreurs PHP en production
-php_flag display_errors off
