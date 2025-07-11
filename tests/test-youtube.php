@@ -4,6 +4,11 @@
  * Fusion de test-title.php et test-player.html
  */
 
+// Démarrer la session seulement si nécessaire
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // Mode de test
 $testMode = $_GET['mode'] ?? 'dashboard';
 

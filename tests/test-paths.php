@@ -4,7 +4,10 @@
  * Fusion de debug.php et test-path.php (partie tests)
  */
 
-session_start();
+// Démarrer la session seulement si nécessaire
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Inclure le système d'authentification SI on est en mode standalone
 $testMode = $_GET['mode'] ?? 'dashboard';
