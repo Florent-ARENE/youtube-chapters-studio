@@ -359,15 +359,24 @@ function setupEluSearch() {
         ).slice(0, 10);
         
         if (matches.length > 0) {
-            suggestions.innerHTML = matches.map(elu => {
-                const eluData = JSON.stringify(elu).replace(/"/g, '&quot;');
-                return `
-                    <div class="suggestion-item" onclick='selectElu(${eluData})'>
-                        <div class="suggestion-name">${elu.nom}</div>
-                        <div class="suggestion-info">${elu.fonction || ''}</div>
-                    </div>
+            suggestions.innerHTML = '';
+            
+            matches.forEach(elu => {
+                const suggestionDiv = document.createElement('div');
+                suggestionDiv.className = 'suggestion-item';
+                suggestionDiv.innerHTML = `
+                    <div class="suggestion-name">${elu.nom}</div>
+                    <div class="suggestion-info">${elu.fonction || ''}</div>
                 `;
-            }).join('');
+                
+                // Utiliser addEventListener au lieu de onclick inline
+                suggestionDiv.addEventListener('click', function() {
+                    selectElu(elu);
+                });
+                
+                suggestions.appendChild(suggestionDiv);
+            });
+            
             suggestions.style.display = 'block';
         } else {
             suggestions.style.display = 'none';
