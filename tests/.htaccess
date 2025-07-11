@@ -1,0 +1,28 @@
+# Configuration pour permettre l'accès distant avec authentification
+# Remplace l'ancien .htaccess dans le dossier tests/
+
+# Autoriser tous les accès (l'authentification sera gérée par PHP)
+Order Allow,Deny
+Allow from all
+
+# Empêcher l'indexation du répertoire
+Options -Indexes
+
+# Empêcher l'accès direct au fichier d'authentification
+<Files "test-auth.php">
+    Order Allow,Deny
+    Allow from all
+</Files>
+
+# Protection contre l'exécution de fichiers non autorisés
+<FilesMatch "\.(sh|sql|db|env|log)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Headers de sécurité
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>

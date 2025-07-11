@@ -13,6 +13,7 @@ L'application a été sécurisée contre les principales vulnérabilités web :
 - ✅ Session Hijacking
 - ✅ Clickjacking
 - ✅ Accès non autorisé aux zones sensibles
+- ✅ **Authentification sécurisée pour les tests** (v2.0.0)
 
 ## 🛡️ Mesures de sécurité implémentées
 
@@ -45,6 +46,7 @@ L'application a été sécurisée contre les principales vulnérabilités web :
 - `session.use_only_cookies = 1`
 - Token CSRF stocké en session
 - Régénération d'ID de session sur actions sensibles
+- **Sessions avec timeout pour l'authentification des tests** (v2.0.0)
 
 ### 6. **Headers de sécurité**
 - `X-Content-Type-Options: nosniff`
@@ -77,40 +79,59 @@ Options -Indexes
 - Protection à activer après installation
 - Empêche la réinstallation accidentelle
 
-#### `/tests/`
+#### `/tests/` (Mise à jour v2.0.0)
 ```apache
-Order Deny,Allow
-Deny from all
-Allow from 127.0.0.1
-Allow from ::1
-Allow from localhost
+# Autoriser tous les accès (l'authentification sera gérée par PHP)
+Order Allow,Deny
+Allow from all
+
+# Empêcher l'indexation
+Options -Indexes
+
+# Headers de sécurité
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
 ```
-- Accès local uniquement
-- Dashboard de tests sécurisé
+- **Authentification par mot de passe** pour l'accès distant
+- **Accès local automatique** depuis 127.0.0.1
+- Sessions sécurisées avec timeout
+- Dashboard de tests protégé
 
 #### `/scripts/`
 - Scripts CLI uniquement
 - Vérification `php_sapi_name() !== 'cli'`
-- À protéger par .htaccess en production
+- Protection totale par .htaccess
 
 #### `/elus/`
 - Fichiers CSV en lecture seule
 - Conversion d'encodage sécurisée
+- Protection contre le téléchargement direct
 
-### 8. **Limites et quotas**
+### 8. **Authentification des tests (v2.0.0)**
+- **Mot de passe configurable** dans `test-auth.php`
+- **Sessions temporaires** avec timeout (1 heure par défaut)
+- **Accès local sans mot de passe** pour le développement
+- **Protection contre le brute force** via les logs serveur
+- **HTTPS recommandé** pour l'accès distant
+
+### 9. **Limites et quotas**
 - Maximum 500 chapitres par projet
 - Maximum 200 caractères par titre
 - Maximum 50 projets par session
 - Timeout des requêtes AJAX
 - Limite de taille des fichiers JSON
+- **Timeout de session pour les tests** : 1 heure
 
-### 9. **Validation AJAX**
+### 10. **Validation AJAX**
 - Vérification du header `X-Requested-With`
 - Validation du token CSRF obligatoire
 - Réponses JSON uniquement
 - Gestion d'erreurs centralisée
 
-### 10. **Encodage sécurisé**
+### 11. **Encodage sécurisé**
 - UTF-8 partout
 - Conversion sécurisée depuis Windows-1252 pour les CSV
 - Protection contre les injections d'encodage
@@ -132,18 +153,20 @@ youtube-chapters-studio/
 │   └── .htaccess          # À activer après installation
 │
 ├── tests/
-│   ├── index.php          # Dashboard local uniquement
-│   └── .htaccess          # Accès 127.0.0.1 uniquement
+│   ├── index.php          # Dashboard avec authentification
+│   ├── test-auth.php      # Système d'authentification
+│   └── .htaccess          # Autoriser tous (auth par PHP)
 │
 ├── scripts/
 │   ├── *.php              # Scripts CLI uniquement
-│   └── .htaccess          # Deny from all (à créer)
+│   └── .htaccess          # Deny from all
 │
 ├── chapters_data/
 │   └── .htaccess          # Deny from all
 │
 └── elus/
-    └── elus.csv           # Données en lecture seule
+    ├── elus.csv           # Données en lecture seule
+    └── .htaccess          # Protection CSV
 ```
 
 ## 🔧 Configuration serveur recommandée
@@ -194,9 +217,48 @@ add_header X-XSS-Protection "1; mode=block";
 add_header Referrer-Policy "strict-origin-when-cross-origin";
 
 # Protection des dossiers
-location ~ /(chapters_data|setup|tests|scripts)/ {
+location ~ /(chapters_data|setup|scripts)/ {
     deny all;
     return 403;
+}
+
+# Tests avec authentification PHP
+location /tests/ {
+    # PHP gère l'authentification
+    try_files $uri $uri/ /tests/index.php?$query_string;
+}
+```
+
+## 🔐 Configuration de l'authentification des tests
+
+### Configuration initiale
+1. **Modifier le mot de passe** dans `tests/test-auth.php` :
+   ```php
+   define('TEST_PASSWORD', 'VotreMotDePasseSecurise2025!');
+   ```
+
+2. **Ou utiliser le script de configuration** :
+   ```bash
+   cd tests/
+   php setup-auth.php
+   ```
+
+### Options avancées
+```php
+// Durée de session (en secondes)
+define('TEST_SESSION_TIMEOUT', 3600); // 1 heure
+
+// Liste blanche d'IPs (optionnel)
+$whitelistedIPs = ['192.168.1.100', '10.0.0.50'];
+```
+
+### Logs d'accès (optionnel)
+```php
+// Dans test-auth.php, ajouter :
+function logAttempt($success) {
+    $log = date('Y-m-d H:i:s') . ' - ' . $_SERVER['REMOTE_ADDR'] . 
+           ' - ' . ($success ? 'SUCCESS' : 'FAILED') . PHP_EOL;
+    file_put_contents('test-access.log', $log, FILE_APPEND);
 }
 ```
 
@@ -220,37 +282,48 @@ location ~ /(chapters_data|setup|tests|scripts)/ {
 - IDs de projet de 8 caractères hexadécimaux
 
 ### 4. **Accès refusé aux tests**
-- Vérifier l'accès depuis localhost (127.0.0.1)
-- Désactiver temporairement le .htaccess si nécessaire
-- Utiliser `?mode=standalone` pour les tests individuels
+- Vérifier le mot de passe dans `test-auth.php`
+- S'assurer que le fichier existe
+- Vérifier l'IP pour l'accès local
+- Utiliser HTTPS pour l'accès distant
+
+### 5. **Session expirée**
+- Se reconnecter avec le mot de passe
+- Augmenter `TEST_SESSION_TIMEOUT` si nécessaire
+- Vérifier `session.gc_maxlifetime` dans PHP
 
 ## 📊 Limites de sécurité actuelles
 
-- **Pas d'authentification** : Tout le monde peut créer/modifier des projets
+- **Pas d'authentification principale** : Tout le monde peut créer/modifier des projets
 - **Pas de chiffrement des données** : Utiliser HTTPS obligatoirement
 - **Pas de backup automatique** : Sauvegarder manuellement `chapters_data/`
 - **Pas de rate limiting natif** : À implémenter au niveau serveur
-- **Pas de journalisation** : Ajouter des logs pour l'audit
+- **Journalisation limitée** : Ajouter des logs pour l'audit
 
 ## 🔐 Bonnes pratiques
 
 ### En développement
-1. Utiliser la suite de tests `/tests/`
+1. Utiliser la suite de tests `/tests/` (accès local automatique)
 2. Vérifier régulièrement avec `/setup/check-installation.php`
 3. Activer les logs d'erreur PHP
+4. Tester avec différents navigateurs
 
 ### En production
 1. **HTTPS obligatoire** avec certificat SSL valide
 2. **Sécuriser `/setup/`** après installation
-3. **Créer `.htaccess` pour `/scripts/`** :
+3. **Configurer l'authentification des tests** :
+   - Changer le mot de passe par défaut
+   - Activer les logs d'accès
+   - Surveiller les tentatives de connexion
+4. **Créer `.htaccess` pour `/scripts/`** :
    ```apache
    Order Deny,Allow
    Deny from all
    ```
-4. **Sauvegardes régulières** de `chapters_data/`
-5. **Surveiller les logs** serveur pour détecter les anomalies
-6. **Mettre à jour PHP** et les dépendances
-7. **Permissions minimales** : 
+5. **Sauvegardes régulières** de `chapters_data/`
+6. **Surveiller les logs** serveur pour détecter les anomalies
+7. **Mettre à jour PHP** et les dépendances
+8. **Permissions minimales** : 
    - Dossiers : 750
    - Fichiers : 640
    - `chapters_data/` : 770 (écriture nécessaire)
@@ -293,6 +366,7 @@ Si vous découvrez une vulnérabilité :
 - [PHP Security Guide](https://www.php.net/manual/en/security.php)
 - [CSP (Content Security Policy)](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP)
 - [Secure Headers](https://securityheaders.com/)
+- [Session Security](https://www.php.net/manual/en/session.security.php)
 
 ---
 

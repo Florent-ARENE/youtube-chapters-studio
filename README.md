@@ -30,16 +30,22 @@ Une application web PHP permettant de créer, gérer et partager facilement des 
 - 📂 **Gestion de projets** : Liste visuelle de tous vos projets avec miniatures et titres
 - 🎨 **Distinction visuelle** : Trois types de contenus avec codes couleur distincts
 - 🔒 **Sécurité renforcée** : Protection CSRF, XSS, validation des entrées
-- 🧪 **Suite de tests complète** : Tests automatisés pour vérifier l'installation
+- 🧪 **Suite de tests complète** : Tests automatisés avec authentification sécurisée
 
 ## 🆕 Nouveautés v2.0.0
 
 ### Réorganisation complète de la structure (v2.0.0)
 - **Dossier `/setup/`** : Installation guidée en 6 étapes avec vérification automatique
-- **Dossier `/tests/`** : Suite de tests centralisée avec dashboard interactif
+- **Dossier `/tests/`** : Suite de tests avec authentification pour accès distant
 - **Dossier `/scripts/`** : Scripts de maintenance et d'administration
 - **Sécurité améliorée** : Fichiers sensibles protégés, protection par .htaccess
 - **Installation simplifiée** : Plus besoin de créer manuellement les dossiers
+
+### Système d'authentification pour les tests
+- 🔐 **Accès sécurisé** : Les tests sont protégés par mot de passe
+- 🏠 **Accès local automatique** : Pas de mot de passe depuis localhost
+- 🌐 **Accès distant** : Authentification requise avec session sécurisée
+- ⏱️ **Sessions temporaires** : Timeout configurable (1 heure par défaut)
 
 ### Module de décalage temporel
 - **Nouveau bouton "Décaler"** : Dans l'en-tête des chapitres
@@ -110,7 +116,11 @@ Idéal après avoir coupé le début d'un live YouTube :
    - Modifiez `setup/.htaccess` pour bloquer l'accès
    - Ou supprimez complètement le dossier `setup/`
 
-5. **Ajoutez votre base d'élus**
+5. **Configurez les tests (nouveau dans v2.0.0)**
+   - Modifiez le mot de passe dans `tests/test-auth.php`
+   - Ou exécutez `php tests/setup-auth.php` pour une configuration guidée
+
+6. **Ajoutez votre base d'élus**
    ```bash
    # Placez votre fichier CSV dans le dossier elus/
    cp votre-fichier-elus.csv elus/elus.csv
@@ -142,15 +152,21 @@ Si l'installation automatique échoue :
    </FilesMatch>
    ```
    
-   **tests/.htaccess** (Accès local uniquement)
+   **tests/.htaccess** (Authentification gérée par PHP)
    ```apache
-   # Autoriser uniquement l'accès local
-   Order Deny,Allow
-   Deny from all
-   Allow from 127.0.0.1
-   Allow from ::1
-   Allow from localhost
+   # Autoriser tous les accès (l'authentification sera gérée par PHP)
+   Order Allow,Deny
+   Allow from all
+   
+   # Empêcher l'indexation
    Options -Indexes
+   
+   # Headers de sécurité
+   <IfModule mod_headers.c>
+       Header set X-Content-Type-Options "nosniff"
+       Header set X-Frame-Options "SAMEORIGIN"
+       Header set X-XSS-Protection "1; mode=block"
+   </IfModule>
    ```
    
    **scripts/.htaccess** (Protection des scripts CLI)
@@ -171,7 +187,11 @@ Si l'installation automatique échoue :
    Options -Indexes
    ```
 
-3. **Vérifiez l'installation**
+3. **Créez le fichier test-auth.php**
+   - Copiez le fichier depuis le repository
+   - Modifiez le mot de passe par défaut
+
+4. **Vérifiez l'installation**
    ```
    http://votre-domaine.com/youtube-chapters-studio/setup/check-installation.php
    ```
@@ -199,29 +219,30 @@ youtube-chapters-studio/
 │   ├── README.md              # Documentation de l'installation
 │   └── .htaccess              # Protection (à activer après installation)
 │
-├── 📁 tests/                  # Suite de tests centralisée
+├── 📁 tests/                  # Suite de tests avec authentification
 │   ├── index.php              # Dashboard interactif des tests
+│   ├── test-auth.php          # Système d'authentification (à créer)
 │   ├── test-ajax.php          # Test AJAX et sauvegarde automatique
 │   ├── test-youtube.php       # Test API YouTube (titres + player)
 │   ├── test-javascript.php    # Test initialisation JavaScript
 │   ├── test-paths.php         # Test chemins et permissions
 │   ├── get-csrf-token.php     # Helper CSRF pour les tests
 │   ├── README.md              # Documentation des tests
-│   └── .htaccess              # Accès local uniquement
+│   └── .htaccess              # Authentification PHP
 │
 ├── 📁 scripts/                # Scripts de maintenance
 │   ├── update-titles.php      # Mise à jour des titres manquants
 │   ├── README.md              # Documentation des scripts
-│   └── .htaccess              # Protection totale (créé automatiquement)
+│   └── .htaccess              # Protection totale
 │
 ├── 📁 chapters_data/          # Stockage des projets JSON
 │   ├── abc12345.json          # Exemple de projet
 │   ├── def67890.json          # Exemple de projet
-│   └── .htaccess              # Protection totale (créé automatiquement)
+│   └── .htaccess              # Protection totale
 │
 └── 📁 elus/                   # Base de données des élus
     ├── elus.csv               # Liste des élus (à ajouter)
-    └── .htaccess              # Protection CSV (créé automatiquement)
+    └── .htaccess              # Protection CSV
 ```
 
 ## 🎮 Utilisation
@@ -316,7 +337,7 @@ Cette fonctionnalité est utile après avoir édité votre vidéo (par exemple, 
 
 ## 🧪 Tests et vérification
 
-### Suite de tests intégrée
+### Suite de tests intégrée avec authentification
 
 Accédez à `/tests/` pour :
 - **Dashboard interactif** : Vue d'ensemble de tous les tests
@@ -325,14 +346,19 @@ Accédez à `/tests/` pour :
 - **Test YouTube** : API et player
 - **Test JavaScript** : Variables et fonctions
 
+### Accès aux tests
+- **Local** : Accès automatique depuis localhost
+- **Distant** : Authentification par mot de passe requise
+- **Configuration** : Modifiez le mot de passe dans `tests/test-auth.php`
+
 ### Vérification rapide
 
 ```bash
 # Vérifier l'installation
 http://votre-domaine.com/setup/check-installation.php
 
-# Dashboard des tests (accès local uniquement)
-http://localhost/youtube-chapters-studio/tests/
+# Dashboard des tests (authentification requise si accès distant)
+http://votre-domaine.com/youtube-chapters-studio/tests/
 ```
 
 ## 📊 Format du fichier elus.csv
@@ -431,7 +457,7 @@ Les projets sont stockés en JSON avec la structure suivante :
       "title": "Introduction"
     },
     {
-      "time": 120,
+      "time": 60,
       "type": "elu",
       "title": "Jean-Luc GLEYZE",
       "elu": {
@@ -470,6 +496,7 @@ L'application utilise plusieurs services pour récupérer les informations :
 - **Path Traversal** : Protection contre l'accès aux fichiers
 - **Headers de sécurité** : X-Frame-Options, X-XSS-Protection
 - **Limites** : 500 chapitres max, 200 caractères par titre
+- **Tests sécurisés** : Authentification pour l'accès distant
 
 ### Scripts de maintenance
 
@@ -508,12 +535,13 @@ Les noms des élus et les titres des votes sont utilisés directement comme titr
 - Validation des données des élus
 - Protection des dossiers par .htaccess
 - Conversion sécurisée de l'encodage du CSV
-- Tests accessibles uniquement en local
+- **Tests avec authentification sécurisée**
 
 ### Recommandations
 - Utilisez HTTPS en production
 - Sauvegardez régulièrement le dossier `chapters_data/`
 - Limitez l'accès au dossier `setup/` après installation
+- **Changez le mot de passe par défaut dans `tests/test-auth.php`**
 - Surveillez les logs pour détecter les anomalies
 
 ## 🐛 Résolution des problèmes
@@ -555,6 +583,11 @@ Les noms des élus et les titres des votes sont utilisés directement comme titr
 - Vérifiez les prérequis PHP
 - Créez manuellement les dossiers si nécessaire
 
+### Accès aux tests refusé
+- Vérifiez que `test-auth.php` existe dans le dossier `tests/`
+- Changez le mot de passe par défaut
+- Assurez-vous que le nouveau `.htaccess` est en place
+
 ## 🚀 Améliorations futures
 
 - [ ] Système d'authentification utilisateur
@@ -592,7 +625,8 @@ Les noms des élus et les titres des votes sont utilisés directement comme titr
 ### Version 2.0.0 (Juillet 2025)
 - 🏗️ **REFONTE MAJEURE** : Réorganisation complète de l'architecture
 - 🚀 **NOUVEAU** : Installation guidée en 6 étapes (/setup/)
-- 🧪 **NOUVEAU** : Suite de tests centralisée avec dashboard interactif (/tests/)
+- 🧪 **NOUVEAU** : Suite de tests avec authentification sécurisée (/tests/)
+- 🔐 **NOUVEAU** : Système d'authentification pour l'accès distant aux tests
 - 📁 **NOUVEAU** : Dossier scripts/ pour les outils de maintenance
 - ⏱️ **NOUVEAU** : Module de décalage temporel des chapitres
 - 🔄 **NOUVEAU** : Deux modes de décalage (tous ou à partir d'un chapitre)
@@ -602,6 +636,7 @@ Les noms des élus et les titres des votes sont utilisés directement comme titr
 - 📱 Interface responsive pour le module de décalage
 - 🔒 **Sécurité renforcée** : Création automatique de tous les fichiers .htaccess
 - 🔐 Protection automatique des dossiers sensibles (chapters_data/, scripts/, elus/)
+- 🔑 **Tests sécurisés** : Accès local automatique, distant avec mot de passe
 - 📊 Dashboard des tests avec résultats en temps réel
 - 🔧 Script update-titles.php déplacé dans scripts/
 - 📚 Documentation complète pour chaque module (README.md dédiés)

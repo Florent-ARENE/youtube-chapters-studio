@@ -1,19 +1,16 @@
 <?php
 /**
- * Dashboard centralisé des tests
+ * Dashboard centralisé des tests avec authentification
  * YouTube Chapters Studio
  */
 
 session_start();
 
-// Vérifier l'accès (développement uniquement)
-$allowedIPs = ['127.0.0.1', '::1'];
-$clientIP = $_SERVER['REMOTE_ADDR'] ?? '';
+// Inclure le système d'authentification
+require_once 'test-auth.php';
 
-if (!in_array($clientIP, $allowedIPs) && $_SERVER['HTTP_HOST'] !== 'localhost') {
-    http_response_code(403);
-    die('Accès refusé. Les tests sont uniquement accessibles en local.');
-}
+// Vérifier l'authentification
+requireTestAuth();
 
 // Configuration des tests
 $tests = [
@@ -117,6 +114,29 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         .header p {
             color: #999;
             font-size: 1.1rem;
+        }
+        
+        .auth-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #1a1a1a;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .auth-status a {
+            color: #ff0000;
+            text-decoration: none;
+            margin-left: 10px;
+        }
+        
+        .auth-status a:hover {
+            text-decoration: underline;
         }
         
         .warning-banner {
@@ -334,10 +354,22 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
                 width: 100%;
                 justify-content: center;
             }
+            
+            .auth-status {
+                position: static;
+                margin-bottom: 20px;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="auth-status">
+        <?php echo getAuthStatus(); ?>
+        <?php if (isset($_SESSION[TEST_SESSION_KEY])): ?>
+            <a href="?logout=1">Déconnexion</a>
+        <?php endif; ?>
+    </div>
+    
     <div class="container">
         <div class="header">
             <h1>🧪 Centre de Tests</h1>
@@ -345,7 +377,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         </div>
         
         <div class="warning-banner">
-            ⚠️ Zone de développement - Accessible uniquement en local
+            ⚠️ Zone de développement - Tests et diagnostics
         </div>
         
         <div class="actions">
@@ -411,7 +443,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         
         <div class="footer">
             <p>
-                YouTube Chapters Studio v1.4.0 | 
+                YouTube Chapters Studio v2.0.0 | 
                 <a href="../">Application</a> | 
                 <a href="../setup/">Installation</a> | 
                 <a href="https://github.com/Florent-ARENE/youtube-chapters-studio" target="_blank">GitHub</a>
