@@ -13,9 +13,11 @@ if (!$data) {
     die("Projet non trouvé");
 }
 
+$videoType = $data["video_type"];
 $videoId = $data["video_id"];
-$videoTitle = $data["video_title"] ?? "Vidéo YouTube";
+$videoTitle = $data["video_title"] ?? "Vidéo";
 $chapters = $data["chapters"];
+$streamData = $data["stream_data"] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -29,11 +31,22 @@ $chapters = $data["chapters"];
     <div class="viewer-container">
         <div class="video-section">
             <div class="video-wrapper">
-                <iframe id="youtube-player"
-                        src="https://www.youtube.com/embed/<?php echo htmlspecialchars($videoId); ?>?enablejsapi=1"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowfullscreen>
-                </iframe>
+                <?php if ($videoType === VIDEO_TYPE_YOUTUBE): ?>
+                    <iframe id="video-player"
+                            src="https://www.youtube.com/embed/<?php echo htmlspecialchars($videoId); ?>?enablejsapi=1"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen>
+                    </iframe>
+                <?php elseif ($videoType === VIDEO_TYPE_STREAM && $streamData): ?>
+                    <iframe id="video-player"
+                            src="<?php echo htmlspecialchars($streamData['embed_url']); ?>"
+                            width="640" 
+                            height="360" 
+                            frameborder="0" 
+                            scrolling="no" 
+                            allowfullscreen>
+                    </iframe>
+                <?php endif; ?>
             </div>
             <div class="video-viewer-info">
                 <h1><?php echo htmlspecialchars($videoTitle); ?></h1>
@@ -46,78 +59,115 @@ $chapters = $data["chapters"];
     </div>
 
     <script>
-        let player;
+        const videoType = <?php echo json_encode($videoType); ?>;
+        const videoData = <?php echo json_encode([
+            'type' => $videoType,
+            'id' => $videoId,
+            'streamData' => $streamData
+        ]); ?>;
         const chapters = <?php echo json_encode($chapters); ?>;
+        let player;
 
-        // Cette fonction DOIT être dans le scope global pour l'API YouTube
-        window.onYouTubeIframeAPIReady = function() {
-            player = new YT.Player("youtube-player", {
-                events: {
-                    "onReady": onPlayerReady
-                }
-            });
-        };
-
-        function onPlayerReady(event) {
-            renderChapters();
+        // Charger le script approprié selon le type
+        if (videoType === 'youtube') {
+            // API YouTube
+            window.onYouTubeIframeAPIReady = function() {
+                player = new YT.Player('video-player', {
+                    events: {
+                        'onReady': onPlayerReady
+                    }
+                });
+            };
+            
+            // Charger l'API YouTube
+            const tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            const firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
 
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName("script")[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        function onPlayerReady(event) {
+            displayChapters();
+        }
+
+        function displayChapters() {
+            const list = document.getElementById('chapters-list');
+            list.innerHTML = '';
+            
+            chapters.forEach((chapter, index) => {
+                const div = document.createElement('div');
+                div.className = 'chapter-item chapter-' + chapter.type;
+                div.innerHTML = `
+                    <span class="chapter-time">${formatTime(chapter.time)}</span>
+                    <span class="chapter-title">${escapeHtml(chapter.title)}</span>
+                `;
+                div.onclick = () => navigateToTime(chapter.time);
+                list.appendChild(div);
+            });
+        }
+
+        function navigateToTime(seconds) {
+            if (videoType === 'youtube' && player && player.seekTo) {
+                player.seekTo(seconds, true);
+            } else if (videoType === 'stream') {
+                // Pour Stream, recharger l'iframe avec le bon timestamp
+                const iframe = document.getElementById('video-player');
+                if (iframe && videoData.streamData) {
+                    const navObj = {
+                        playbackOptions: {
+                            startTimeInSeconds: seconds,
+                            timestampedLinkReferrerInfo: {
+                                scenario: "ChapterShare",
+                                additionalInfo: { isSharedChapterAuto: false }
+                            }
+                        },
+                        referralInfo: {
+                            referralApp: "StreamWebApp",
+                            referralView: "ShareChapterLink",
+                            referralAppPlatform: "Web",
+                            referralMode: "view"
+                        }
+                    };
+                    
+                    const navEncoded = btoa(JSON.stringify(navObj));
+                    let newUrl = videoData.streamData.base_url + '?nav=' + encodeURIComponent(navEncoded);
+                    
+                    // Ajouter email et e si disponibles
+                    if (videoData.streamData.full_url.includes('email=')) {
+                        const emailMatch = videoData.streamData.full_url.match(/[?&]email=([^&]+)/);
+                        if (emailMatch) newUrl += '&email=' + emailMatch[1];
+                    }
+                    if (videoData.streamData.full_url.includes('&e=')) {
+                        const eMatch = videoData.streamData.full_url.match(/[?&]e=([^&]+)/);
+                        if (eMatch) newUrl += '&e=' + eMatch[1];
+                    }
+                    
+                    iframe.src = newUrl;
+                }
+            }
+        }
 
         function formatTime(totalSeconds) {
+            totalSeconds = Math.max(0, Math.floor(totalSeconds));
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
             
             if (hours > 0) {
-                return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             }
-            return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
         }
 
-        function goToTime(seconds) {
-            if (player && player.seekTo) {
-                player.seekTo(seconds, true);
-            }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
-        function renderChapters() {
-            const listElement = document.getElementById("chapters-list");
-            listElement.innerHTML = "";
-            
-            chapters.forEach((chapter) => {
-                const chapterDiv = document.createElement("div");
-                let className = "chapter-item";
-                if (chapter.type === "elu") className += " chapter-elu";
-                else if (chapter.type === "vote") className += " chapter-vote";
-                chapterDiv.className = className;
-                chapterDiv.onclick = () => goToTime(chapter.time);
-                
-                let content = `<div class="chapter-time">${formatTime(chapter.time)}</div>`;
-                
-                if (chapter.type === "elu" && chapter.elu) {
-                    content += `
-                        <div class="chapter-content">
-                            <div class="chapter-title">
-                                <span class="elu-icon">👤</span> ${chapter.elu.nom}
-                            </div>`;
-                    
-                    if (chapter.showInfo && chapter.elu.fonction) {
-                        content += `<div class="elu-info">${chapter.elu.fonction}</div>`;
-                    }
-                    content += `</div>`;
-                } else if (chapter.type === "vote") {
-                    content += `<div class="chapter-title"><span class="vote-icon">🗳️</span> ${chapter.title}</div>`;
-                } else {
-                    content += `<div class="chapter-title">${chapter.title}</div>`;
-                }
-                
-                chapterDiv.innerHTML = content;
-                listElement.appendChild(chapterDiv);
-            });
+        // Afficher les chapitres dès le chargement si ce n'est pas YouTube
+        if (videoType !== 'youtube') {
+            document.addEventListener('DOMContentLoaded', displayChapters);
         }
     </script>
 </body>

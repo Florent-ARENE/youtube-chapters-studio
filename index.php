@@ -1,7 +1,15 @@
 <?php
 /**
- * YouTube Chapters Studio - Interface principale
- * Version 1.4.0 avec sécurité renforcée
+ * Chapter Studio - Interface principale
+ * Version 2.0.0 - Ajout support Microsoft Stream
+ * 
+ * CHANGELOG v2.0.0 :
+ * - Ajout détection automatique YouTube/Stream via detectVideoType()
+ * - Ajout traitement formulaire pour URLs Stream
+ * - Ajout conversion automatique stream.aspx → embed.aspx
+ * - Ajout variables $videoType et $streamData
+ * - Ajout vidéos Stream dans la grille des projets
+ * - Support transparent : même interface pour YouTube et Stream
  */
 
 require_once 'config.php';
@@ -10,7 +18,8 @@ require_once 'functions.php';
 // Chargement des élus
 $elus = loadElus();
 
-// Initialisation des variables
+// MODIFIÉ v2.0.0 : Initialisation des variables avec support Stream
+$videoType = VIDEO_TYPE_YOUTUBE; // NOUVEAU v2.0.0
 $videoId = '';
 $videoTitle = '';
 $chapters = [];
@@ -18,6 +27,7 @@ $projectId = null;
 $shareUrl = '';
 $embedCode = '';
 $error = '';
+$streamData = null; // NOUVEAU v2.0.0
 
 // Récupération sécurisée de l'ID de projet
 if (isset($_GET['p'])) {
@@ -33,22 +43,32 @@ $baseUrl = getBaseUrl();
 
 // Gestion du nouveau projet
 if (isset($_GET['new'])) {
+    unset($_SESSION['video_type']); // NOUVEAU v2.0.0
     unset($_SESSION['video_id']);
     unset($_SESSION['project_id']);
+    unset($_SESSION['stream_data']); // NOUVEAU v2.0.0
     header('Location: index.php');
     exit;
 }
 
-// Chargement d'un projet existant
+// MODIFIÉ v2.0.0 : Chargement d'un projet existant avec support Stream
 if ($projectId && !$error) {
     $data = loadChapterData($projectId);
     if ($data) {
+        $videoType = $data['video_type'] ?? VIDEO_TYPE_YOUTUBE; // NOUVEAU v2.0.0
         $videoId = $data['video_id'];
-        $videoTitle = $data['video_title'] ?? getYouTubeTitle($videoId);
+        $videoTitle = $data['video_title'] ?? ($videoType === VIDEO_TYPE_YOUTUBE ? getYouTubeTitle($videoId) : 'Vidéo Stream'); // MODIFIÉ v2.0.0
         $chapters = $data['chapters'];
+        $streamData = $data['stream_data'] ?? null; // NOUVEAU v2.0.0
+        
+        $_SESSION['video_type'] = $videoType; // NOUVEAU v2.0.0
         $_SESSION['video_id'] = $videoId;
         $_SESSION['video_title'] = $videoTitle;
         $_SESSION['project_id'] = $projectId;
+        
+        if ($streamData) { // NOUVEAU v2.0.0
+            $_SESSION['stream_data'] = $streamData;
+        }
         
         // Générer les URLs pour un projet existant
         $shareUrl = $baseUrl . "/index.php?p=" . $projectId;
@@ -60,29 +80,73 @@ if ($projectId && !$error) {
     }
 }
 
-// Traitement du formulaire de chargement de vidéo
+// MODIFIÉ v2.0.0 : Traitement du formulaire avec support Stream
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['youtube_url'])) {
     // Validation CSRF
     if (!isset($_POST['csrf_token']) || !validateCsrfToken($_POST['csrf_token'])) {
         $error = 'Erreur de sécurité. Veuillez recharger la page.';
     } else {
-        $videoId = validateYouTubeUrl($_POST['youtube_url']);
-        if ($videoId) {
-            $videoTitle = getYouTubeTitle($videoId);
-            $_SESSION['video_id'] = $videoId;
-            $_SESSION['video_title'] = $videoTitle;
-            // Reset du projet si nouvelle vidéo
-            unset($_SESSION['project_id']);
-            $chapters = [];
-            $projectId = null;
+        $url = $_POST['youtube_url'];
+        
+        // NOUVEAU v2.0.0 : Détection automatique du type
+        $detectedType = detectVideoType($url);
+        
+        if ($detectedType === VIDEO_TYPE_YOUTUBE) {
+            // Traitement YouTube (code original)
+            $videoId = validateYouTubeUrl($url);
+            if ($videoId) {
+                $videoType = VIDEO_TYPE_YOUTUBE; // NOUVEAU v2.0.0
+                $videoTitle = getYouTubeTitle($videoId);
+                $_SESSION['video_type'] = $videoType; // NOUVEAU v2.0.0
+                $_SESSION['video_id'] = $videoId;
+                $_SESSION['video_title'] = $videoTitle;
+                unset($_SESSION['project_id']);
+                unset($_SESSION['stream_data']); // NOUVEAU v2.0.0
+                $chapters = [];
+                $projectId = null;
+                $streamData = null; // NOUVEAU v2.0.0
+            } else {
+                $error = 'URL YouTube invalide';
+            }
+        } elseif ($detectedType === VIDEO_TYPE_STREAM) {
+            // NOUVEAU v2.0.0 : Traitement Stream avec conversion automatique
+            $streamInfo = validateStreamUrl($url);
+            if ($streamInfo) {
+                $videoType = VIDEO_TYPE_STREAM;
+                $videoId = $streamInfo['unique_id'];
+                
+                // L'URL d'embed est générée automatiquement par validateStreamUrl()
+                $streamData = [
+                    'unique_id' => $streamInfo['unique_id'],
+                    'full_url' => $streamInfo['full_url'],
+                    'base_url' => $streamInfo['base_url'],
+                    'embed_url' => $streamInfo['embed_url']
+                ];
+                
+                // Titre automatique depuis le nom du fichier
+                $videoTitle = getStreamTitleFromData($streamInfo);
+                
+                $_SESSION['video_type'] = $videoType;
+                $_SESSION['video_id'] = $videoId;
+                $_SESSION['video_title'] = $videoTitle;
+                $_SESSION['stream_data'] = $streamData;
+                unset($_SESSION['project_id']);
+                $chapters = [];
+                $projectId = null;
+            } else {
+                $error = 'URL Microsoft Stream invalide';
+            }
         } else {
-            $error = 'URL YouTube invalide';
+            // NOUVEAU v2.0.0
+            $error = 'URL non reconnue. Veuillez fournir une URL YouTube ou Microsoft Stream valide.';
         }
     }
 } elseif (isset($_SESSION['video_id']) && !$projectId) {
-    // Chargement depuis la session
+    // MODIFIÉ v2.0.0 : Chargement depuis la session avec support Stream
+    $videoType = $_SESSION['video_type'] ?? VIDEO_TYPE_YOUTUBE; // NOUVEAU v2.0.0
     $videoId = $_SESSION['video_id'];
-    if (validateYouTubeId($videoId)) {
+    
+    if ($videoType === VIDEO_TYPE_YOUTUBE && validateYouTubeId($videoId)) {
         $videoTitle = $_SESSION['video_title'] ?? getYouTubeTitle($videoId);
         if (isset($_SESSION['project_id'])) {
             $projectId = $_SESSION['project_id'];
@@ -92,6 +156,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['youtube_url'])) {
                     $chapters = $data['chapters'];
                     $videoTitle = $data['video_title'] ?? $videoTitle;
                     // Générer les URLs
+                    $shareUrl = $baseUrl . "/index.php?p=" . $projectId;
+                    $embedUrl = $baseUrl . "/viewer.php?p=" . $projectId;
+                    $embedCode = '<iframe src="' . htmlspecialchars($embedUrl) . '" width="100%" height="600" frameborder="0" allowfullscreen></iframe>';
+                }
+            }
+        }
+    } elseif ($videoType === VIDEO_TYPE_STREAM && validateStreamId($videoId)) {
+        // NOUVEAU v2.0.0 : Gestion Stream depuis session
+        $videoTitle = $_SESSION['video_title'] ?? 'Vidéo Microsoft Stream';
+        $streamData = $_SESSION['stream_data'] ?? null;
+        if (isset($_SESSION['project_id'])) {
+            $projectId = $_SESSION['project_id'];
+            if (validateProjectId($projectId)) {
+                $data = loadChapterData($projectId);
+                if ($data) {
+                    $chapters = $data['chapters'];
+                    $videoTitle = $data['video_title'] ?? $videoTitle;
+                    $streamData = $data['stream_data'] ?? $streamData;
                     $shareUrl = $baseUrl . "/index.php?p=" . $projectId;
                     $embedUrl = $baseUrl . "/viewer.php?p=" . $projectId;
                     $embedCode = '<iframe src="' . htmlspecialchars($embedUrl) . '" width="100%" height="600" frameborder="0" allowfullscreen></iframe>';
@@ -166,6 +248,47 @@ $csrfToken = $_SESSION['csrf_token'];
             margin-top: 10px;
             opacity: 0.8;
         }
+        
+        /* NOUVEAU v2.0.0 : Styles pour Stream */
+        .stream-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4em;
+        }
+        
+        .video-type-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            z-index: 2;
+        }
+        
+        .video-type-badge.youtube {
+            background: #ff0000;
+            color: white;
+        }
+        
+        .video-type-badge.stream {
+            background: #0078d4;
+            color: white;
+        }
+        
+        .stream-notice {
+            background: #0078d4;
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -186,19 +309,23 @@ $csrfToken = $_SESSION['csrf_token'];
         <form method="POST" class="url-form">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
             <div class="form-group">
-                <label for="youtube_url">URL de la vidéo YouTube</label>
+                <!-- MODIFIÉ v2.0.0 : Label et description mis à jour -->
+                <label for="youtube_url">URL de la vidéo (YouTube ou Microsoft Stream)</label>
                 <input type="url" 
                        id="youtube_url" 
                        name="youtube_url" 
-                       placeholder="https://www.youtube.com/watch?v=..." 
+                       placeholder="https://www.youtube.com/watch?v=... ou https://...sharepoint.com/..." 
                        value=""
                        required
-                       pattern="https?://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]+"
-                       maxlength="200">
+                       maxlength="500">
+                <small class="help-text">
+                    Formats acceptés : YouTube (youtube.com, youtu.be) ou Microsoft Stream (sharepoint.com)<br>
+                    <strong>Stream :</strong> Collez simplement l'URL depuis la barre d'adresse - la conversion est automatique !
+                </small>
             </div>
             <button type="submit" class="btn">Charger la vidéo</button>
             <?php if ($projectId): ?>
-            <a href="index.php?new=1" class="btn btn-secondary ml-10">📄 Nouveau projet</a>
+            <a href="index.php?new=1" class="btn btn-secondary ml-10">🔄 Nouveau projet</a>
             <div class="project-info">
                 <strong>🔗 Projet actuel :</strong> <?php echo htmlspecialchars($projectId); ?><br>
                 <div class="flex-center gap-10 mt-5">
@@ -210,24 +337,50 @@ $csrfToken = $_SESSION['csrf_token'];
             <?php endif; ?>
         </form>
 
-        <?php if ($videoId && validateYouTubeId($videoId)): ?>
+        <?php if ($videoId): // MODIFIÉ v2.0.0 : Support YouTube ET Stream ?>
         <div class="main-content">
             <div class="video-container">
                 <div class="video-wrapper">
-                    <iframe id="youtube-player"
-                            src="https://www.youtube.com/embed/<?php echo htmlspecialchars($videoId); ?>?enablejsapi=1"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowfullscreen>
-                    </iframe>
+                    <?php if ($videoType === VIDEO_TYPE_YOUTUBE): ?>
+                        <!-- Code YouTube original -->
+                        <iframe id="youtube-player"
+                                src="https://www.youtube.com/embed/<?php echo htmlspecialchars($videoId); ?>?enablejsapi=1"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowfullscreen>
+                        </iframe>
+                    <?php elseif ($videoType === VIDEO_TYPE_STREAM && $streamData): ?>
+                        <!-- NOUVEAU v2.0.0 : Player Stream -->
+                        <iframe id="stream-player"
+                                src="<?php echo htmlspecialchars($streamData['embed_url']); ?>"
+                                width="100%" 
+                                height="100%" 
+                                frameborder="0" 
+                                scrolling="no" 
+                                allowfullscreen>
+                        </iframe>
+                        <div class="stream-notice">
+                            ℹ️ <strong>Mode Stream :</strong> La capture automatique du temps n'est pas disponible. Saisissez les timestamps manuellement.
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <div class="video-info">
-                    <img src="https://img.youtube.com/vi/<?php echo htmlspecialchars($videoId); ?>/default.jpg" 
-                         alt="Miniature" 
-                         class="video-mini-thumbnail"
-                         onerror="this.style.display='none'">
+                    <?php if ($videoType === VIDEO_TYPE_YOUTUBE): ?>
+                        <img src="https://img.youtube.com/vi/<?php echo htmlspecialchars($videoId); ?>/default.jpg" 
+                             alt="Miniature" 
+                             class="video-mini-thumbnail"
+                             onerror="this.style.display='none'">
+                    <?php endif; ?>
                     <div class="video-info-text">
                         <h3 class="video-main-title"><?php echo htmlspecialchars($videoTitle); ?></h3>
-                        <span class="video-id-info">ID: <?php echo htmlspecialchars($videoId); ?></span>
+                        <!-- MODIFIÉ v2.0.0 : Ajout du type de vidéo -->
+                        <span class="video-id-info">
+                            <?php if ($videoType === VIDEO_TYPE_YOUTUBE): ?>
+                                📺 YouTube -
+                            <?php else: ?>
+                                📹 Stream -
+                            <?php endif; ?>
+                            ID: <?php echo htmlspecialchars($videoId); ?>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -243,7 +396,7 @@ $csrfToken = $_SESSION['csrf_token'];
                     </div>
                 </div>
 
-                <!-- Module de décalage temporel -->
+                <!-- Module de décalage temporel (code original inchangé) -->
                 <div id="time-shift-module" class="time-shift-module" style="display: none;">
                     <div class="time-shift-header">
                         <h3>🔄 Décaler les chapitres dans le temps</h3>
@@ -351,15 +504,18 @@ $csrfToken = $_SESSION['csrf_token'];
         <?php else: ?>
         <div class="no-video">
             <h2>Aucune vidéo chargée</h2>
-            <p>Entrez l'URL d'une vidéo YouTube pour commencer</p>
+            <!-- MODIFIÉ v2.0.0 : Texte mis à jour -->
+            <p>Entrez l'URL d'une vidéo YouTube ou Microsoft Stream pour commencer</p>
             
             <div class="instructions-box">
                 <h3>📖 Comment utiliser cette application ?</h3>
                 <ol>
-                    <li><strong>Créer un nouveau projet :</strong> Collez l'URL d'une vidéo YouTube et cliquez sur "Charger la vidéo"</li>
+                    <!-- MODIFIÉ v2.0.0 : Instructions mises à jour -->
+                    <li><strong>Créer un nouveau projet :</strong> Collez l'URL d'une vidéo YouTube ou Stream et cliquez sur "Charger la vidéo"</li>
                     <li><strong>Ajouter des chapitres :</strong> 
                         <ul>
-                            <li>Utilisez le bouton "Capturer le temps actuel" ou saisissez manuellement</li>
+                            <li>YouTube : Utilisez le bouton "Capturer le temps actuel" ou saisissez manuellement</li>
+                            <li>Stream : Saisissez manuellement les timestamps</li>
                             <li>Choisissez entre : Chapitre, Élu ou Vote</li>
                             <li>Pour les élus, utilisez la recherche par autocomplétion</li>
                         </ul>
@@ -383,10 +539,18 @@ $csrfToken = $_SESSION['csrf_token'];
                 <div class="project-card">
                     <a href="index.php?p=<?php echo htmlspecialchars($project['id']); ?>" class="project-thumbnail-link">
                         <div class="project-thumbnail">
-                            <img src="https://img.youtube.com/vi/<?php echo htmlspecialchars($project['video_id']); ?>/mqdefault.jpg" 
-                                 alt="Miniature de la vidéo" 
-                                 loading="lazy"
-                                 onerror="this.onerror=null; this.src='https://img.youtube.com/vi/<?php echo htmlspecialchars($project['video_id']); ?>/default.jpg';">
+                            <?php if ($project['video_type'] === VIDEO_TYPE_YOUTUBE): ?>
+                                <!-- Miniature YouTube -->
+                                <img src="https://img.youtube.com/vi/<?php echo htmlspecialchars($project['video_id']); ?>/mqdefault.jpg" 
+                                     alt="Miniature de la vidéo" 
+                                     loading="lazy"
+                                     onerror="this.onerror=null; this.src='https://img.youtube.com/vi/<?php echo htmlspecialchars($project['video_id']); ?>/default.jpg';">
+                                <span class="video-type-badge youtube">YouTube</span>
+                            <?php else: ?>
+                                <!-- NOUVEAU v2.0.0 : Placeholder Stream -->
+                                <div class="stream-placeholder">📹</div>
+                                <span class="video-type-badge stream">Stream</span>
+                            <?php endif; ?>
                             <div class="chapters-overlay">
                                 <span><?php echo intval($project['chapters_count']); ?> chapitre(s)</span>
                             </div>
@@ -425,8 +589,9 @@ $csrfToken = $_SESSION['csrf_token'];
     </div>
 
     <script>
-        // Variables globales sécurisées - DOIT être défini AVANT app.js
+        // MODIFIÉ v2.0.0 : Variables globales sécurisées avec support Stream
         window.appConfig = {
+            videoType: <?php echo json_encode($videoType); ?>, // NOUVEAU v2.0.0
             chapters: <?php echo json_encode($chapters); ?>,
             elus: <?php echo json_encode($elus); ?>,
             projectId: <?php echo json_encode($projectId); ?>,
@@ -434,7 +599,8 @@ $csrfToken = $_SESSION['csrf_token'];
             videoTitle: <?php echo json_encode($videoTitle); ?>,
             csrfToken: <?php echo json_encode($csrfToken); ?>,
             maxChapters: <?php echo MAX_CHAPTERS; ?>,
-            maxTitleLength: <?php echo MAX_TITLE_LENGTH; ?>
+            maxTitleLength: <?php echo MAX_TITLE_LENGTH; ?>,
+            streamData: <?php echo json_encode($streamData); ?> // NOUVEAU v2.0.0
         };
         
         console.log('appConfig défini avant app.js:', window.appConfig);
