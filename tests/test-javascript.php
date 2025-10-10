@@ -4,7 +4,10 @@
  * Fusion de test-js-init.php et test-video-load.php
  */
 
-session_start();
+// Démarrer la session seulement si nécessaire
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require_once '../config.php';
 require_once '../functions.php';
 

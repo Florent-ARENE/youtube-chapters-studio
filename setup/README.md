@@ -83,18 +83,33 @@ Options -Indexes
 </FilesMatch>
 ```
 
-#### `tests/.htaccess`
+#### `tests/.htaccess` (v2.0.0 - Authentification PHP)
 ```apache
-# Autoriser uniquement l'accès local
-Order Deny,Allow
-Deny from all
-Allow from 127.0.0.1
-Allow from ::1
-Allow from localhost
+# Configuration pour permettre l'accès distant avec authentification
+# L'authentification est gérée par PHP (test-auth.php)
 
-# Empêcher l'indexation
+# Autoriser tous les accès (l'authentification sera gérée par PHP)
+Order Allow,Deny
+Allow from all
+
+# Empêcher l'indexation du répertoire
 Options -Indexes
+
+# Protection contre l'exécution de fichiers non autorisés
+<FilesMatch "\.(sh|sql|db|env|log)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Headers de sécurité
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
 ```
+
+**Note importante v2.0.0** : Le système crée aussi `test-auth.php` avec un mot de passe temporaire. **Changez-le immédiatement !**
 
 #### `scripts/.htaccess`
 ```apache
@@ -149,14 +164,29 @@ Options -Indexes
 3. L'installation crée automatiquement :
    - Les dossiers nécessaires avec les bonnes permissions
    - **Tous les fichiers .htaccess de sécurité**
+   - **Le fichier test-auth.php avec mot de passe temporaire** (v2.0.0)
    - Le fichier `.installed` qui empêche les réinstallations accidentelles
 
-### 2. Réinstallation
+### 2. Configuration post-installation (v2.0.0)
+
+**IMPORTANT** : Après l'installation, configurez immédiatement les tests :
+
+1. **Changez le mot de passe des tests** :
+   - Éditez `tests/test-auth.php`
+   - Remplacez le mot de passe temporaire
+   
+2. **Ou utilisez le script de configuration** :
+   ```bash
+   cd tests/
+   php setup-auth.php
+   ```
+
+### 3. Réinstallation
 Si vous devez réinstaller :
 1. **Option automatique** : Utilisez le bouton "Réinitialiser l'installation"
 2. **Option manuelle** : Supprimez le fichier `.installed` à la racine
 
-### 3. Actions de réparation
+### 4. Actions de réparation
 Le système peut corriger automatiquement :
 - Dossiers manquants
 - Permissions incorrectes
@@ -183,6 +213,12 @@ Deny from all
 rm -rf setup/
 ```
 
+### Option 3 : Configuration des tests (v2.0.0)
+1. **Changez le mot de passe** dans `tests/test-auth.php`
+2. **Testez l'accès local** : http://localhost/youtube-chapters-studio/tests/
+3. **Testez l'accès distant** avec le nouveau mot de passe
+4. **Activez HTTPS** pour l'accès distant aux tests
+
 ## 📁 Structure créée
 
 Après l'installation, votre arborescence ressemble à :
@@ -194,7 +230,8 @@ youtube-chapters-studio/
 ├── elus/                    # Dossier pour elus.csv
 │   └── .htaccess           # Protection CSV (créé automatiquement)
 ├── tests/                   # Suite de tests
-│   └── .htaccess           # Accès local uniquement (créé automatiquement)
+│   ├── test-auth.php       # Authentification (créé automatiquement v2.0.0)
+│   └── .htaccess           # Accès avec auth PHP (créé automatiquement)
 └── scripts/                 # Scripts de maintenance
     └── .htaccess           # Protection totale (créé automatiquement)
 ```
@@ -213,6 +250,11 @@ youtube-chapters-studio/
 - Vérifiez que PHP peut écrire dans les dossiers
 - Créez-les manuellement en copiant les contenus ci-dessus
 - Vérifiez que votre serveur supporte les fichiers .htaccess
+
+### test-auth.php non créé (v2.0.0)
+- Téléchargez le fichier depuis le repository
+- Ou créez-le manuellement avec le code fourni
+- **IMPORTANT** : Changez le mot de passe par défaut
 
 ### Extensions manquantes
 - Contactez votre hébergeur
@@ -239,7 +281,7 @@ Pour forcer l'accès à l'installation :
 
 Après l'installation, vérifiez que :
 1. `chapters_data/` n'est pas accessible directement via le web
-2. `/tests/` n'est accessible qu'en local (127.0.0.1)
+2. `/tests/` demande un mot de passe en accès distant
 3. `/scripts/` n'est pas accessible via le web
 4. Les fichiers CSV dans `/elus/` ne sont pas téléchargeables
 
@@ -247,6 +289,7 @@ Testez en essayant d'accéder à :
 - `http://votre-domaine.com/chapters_data/test.json` → Doit afficher "Forbidden"
 - `http://votre-domaine.com/scripts/update-titles.php` → Doit afficher "Forbidden"
 - `http://votre-domaine.com/elus/elus.csv` → Doit afficher "Forbidden"
+- `http://votre-domaine.com/tests/` → Doit demander un mot de passe (si accès distant)
 
 ## 🆘 Support
 
@@ -255,3 +298,26 @@ Si l'installation échoue :
 2. Consultez `/tests/test-paths.php` pour plus d'informations
 3. Vérifiez les logs d'erreur PHP de votre serveur
 4. Consultez la documentation complète sur GitHub
+
+## 🔐 Sécurité des tests (v2.0.0)
+
+La version 2.0.0 introduit un système d'authentification pour les tests :
+
+### Accès local vs distant
+- **Local (localhost)** : Accès automatique sans mot de passe
+- **Distant** : Authentification requise
+
+### Configuration recommandée
+1. **Mot de passe fort** : Au moins 12 caractères
+2. **HTTPS obligatoire** : Pour l'accès distant
+3. **Logs d'accès** : Surveillez les tentatives de connexion
+4. **Timeout de session** : 1 heure par défaut
+
+### Personnalisation
+Dans `test-auth.php`, vous pouvez :
+- Modifier le timeout de session
+- Ajouter une liste blanche d'IPs
+- Activer les logs d'accès
+- Configurer des notifications
+
+Cette nouvelle approche permet de garder la facilité d'accès en développement local tout en sécurisant l'accès distant.

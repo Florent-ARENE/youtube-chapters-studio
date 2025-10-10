@@ -4,7 +4,10 @@
  * Fusion de test-save.php et test-simple-save.html
  */
 
-session_start();
+// Démarrer la session seulement si nécessaire
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require_once '../config.php';
 
 // Mode de test

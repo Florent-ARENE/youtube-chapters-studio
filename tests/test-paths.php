@@ -1,16 +1,25 @@
 <?php
 /**
- * Test des chemins et permissions
+ * Test des chemins et permissions avec authentification
  * Fusion de debug.php et test-path.php (partie tests)
  */
 
-session_start();
-require_once '../config.php';
+// Démarrer la session seulement si nécessaire
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Mode de test
+// Inclure le système d'authentification SI on est en mode standalone
 $testMode = $_GET['mode'] ?? 'dashboard';
 
-// Actions de réparation
+if ($testMode === 'standalone') {
+    require_once 'test-auth.php';
+    requireTestAuth();
+}
+
+require_once '../config.php';
+
+// Actions de réparation (reste identique)
 if (isset($_GET['fix'])) {
     header('Content-Type: application/json');
     

@@ -1,19 +1,16 @@
 <?php
 /**
- * Dashboard centralisé des tests
+ * Dashboard centralisé des tests avec authentification
  * YouTube Chapters Studio
  */
 
 session_start();
 
-// Vérifier l'accès (développement uniquement)
-$allowedIPs = ['127.0.0.1', '::1'];
-$clientIP = $_SERVER['REMOTE_ADDR'] ?? '';
+// Inclure le système d'authentification
+require_once 'test-auth.php';
 
-if (!in_array($clientIP, $allowedIPs) && $_SERVER['HTTP_HOST'] !== 'localhost') {
-    http_response_code(403);
-    die('Accès refusé. Les tests sont uniquement accessibles en local.');
-}
+// Vérifier l'authentification
+requireTestAuth();
 
 // Configuration des tests
 $tests = [
@@ -48,19 +45,46 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
     ob_start();
     $startTime = microtime(true);
     
+    // Capturer aussi les erreurs PHP
+    $errorOutput = '';
+    $oldErrorHandler = set_error_handler(function($errno, $errstr, $errfile, $errline) use (&$errorOutput) {
+        $errorOutput .= "Erreur PHP [$errno]: $errstr dans $errfile ligne $errline\n";
+        return true;
+    });
+    
     try {
         if (file_exists($testFile)) {
+            // Forcer le mode dashboard pour avoir une sortie
+            $_GET['mode'] = 'dashboard';
             include $testFile;
             $output = ob_get_clean();
-            $success = true;
+            
+            // Ajouter les erreurs PHP si présentes
+            if ($errorOutput) {
+                $output = "Erreurs PHP détectées:\n" . $errorOutput . "\n\nSortie du test:\n" . $output;
+                $success = false;
+            } else {
+                $success = true;
+            }
+            
+            // Si aucune sortie, générer un message par défaut
+            if (empty(trim($output))) {
+                $output = "Test exécuté sans erreur (pas de sortie)";
+            }
         } else {
-            throw new Exception("Fichier de test non trouvé");
+            throw new Exception("Fichier de test non trouvé: " . $testFile);
         }
     } catch (Exception $e) {
         $output = ob_get_clean();
-        $output = "Erreur : " . $e->getMessage();
+        $output = "Erreur : " . $e->getMessage() . "\n" . $e->getTraceAsString();
+        if ($errorOutput) {
+            $output .= "\n\nErreurs PHP:\n" . $errorOutput;
+        }
         $success = false;
     }
+    
+    // Restaurer le gestionnaire d'erreurs
+    restore_error_handler();
     
     $duration = round((microtime(true) - $startTime) * 1000, 2);
     
@@ -68,7 +92,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         'success' => $success,
         'output' => $output,
         'duration' => $duration
-    ]);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 ?>
@@ -117,6 +141,29 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         .header p {
             color: #999;
             font-size: 1.1rem;
+        }
+        
+        .auth-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #1a1a1a;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .auth-status a {
+            color: #ff0000;
+            text-decoration: none;
+            margin-left: 10px;
+        }
+        
+        .auth-status a:hover {
+            text-decoration: underline;
         }
         
         .warning-banner {
@@ -334,10 +381,22 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
                 width: 100%;
                 justify-content: center;
             }
+            
+            .auth-status {
+                position: static;
+                margin-bottom: 20px;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="auth-status">
+        <?php echo getAuthStatus(); ?>
+        <?php if (isset($_SESSION[TEST_SESSION_KEY])): ?>
+            <a href="?logout=1">Déconnexion</a>
+        <?php endif; ?>
+    </div>
+    
     <div class="container">
         <div class="header">
             <h1>🧪 Centre de Tests</h1>
@@ -345,7 +404,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         </div>
         
         <div class="warning-banner">
-            ⚠️ Zone de développement - Accessible uniquement en local
+            ⚠️ Zone de développement - Tests et diagnostics
         </div>
         
         <div class="actions">
@@ -362,27 +421,31 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         
         <div class="tests-grid">
             <?php foreach ($tests as $file => $test): ?>
-            <div class="test-card" data-test="<?php echo htmlspecialchars($file); ?>">
+            <?php
+            // Générer un ID simple et cohérent
+            $testId = preg_replace('/[^a-z0-9]/', '', strtolower($file));
+            ?>
+            <div class="test-card" data-test="<?php echo htmlspecialchars($file); ?>" data-test-id="<?php echo $testId; ?>">
                 <div class="test-header">
                     <div class="test-title">
                         <span class="test-icon"><?php echo $test['icon']; ?></span>
                         <span><?php echo htmlspecialchars($test['name']); ?></span>
                     </div>
-                    <div class="test-status" id="status-<?php echo md5($file); ?>"></div>
+                    <div class="test-status" id="status-<?php echo $testId; ?>"></div>
                 </div>
                 <div class="test-description">
                     <?php echo htmlspecialchars($test['description']); ?>
                 </div>
                 <div class="test-actions">
-                    <button class="btn btn-secondary" onclick="runTest('<?php echo htmlspecialchars($file); ?>')">
+                    <button class="btn btn-secondary" onclick="runTest('<?php echo htmlspecialchars($file); ?>', '<?php echo $testId; ?>')">
                         ▶️ Exécuter
                     </button>
                     <button class="btn btn-secondary" onclick="viewTest('<?php echo htmlspecialchars($file); ?>')">
                         👁️ Voir le test
                     </button>
                 </div>
-                <div class="test-output" id="output-<?php echo md5($file); ?>"></div>
-                <div class="test-duration" id="duration-<?php echo md5($file); ?>"></div>
+                <div class="test-output" id="output-<?php echo $testId; ?>"></div>
+                <div class="test-duration" id="duration-<?php echo $testId; ?>"></div>
             </div>
             <?php endforeach; ?>
         </div>
@@ -411,7 +474,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
         
         <div class="footer">
             <p>
-                YouTube Chapters Studio v1.4.0 | 
+                YouTube Chapters Studio v2.0.0 | 
                 <a href="../">Application</a> | 
                 <a href="../setup/">Installation</a> | 
                 <a href="https://github.com/Florent-ARENE/youtube-chapters-studio" target="_blank">GitHub</a>
@@ -427,10 +490,17 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
             duration: 0
         };
         
-        function runTest(testFile) {
-            const statusEl = document.getElementById('status-' + md5(testFile));
-            const outputEl = document.getElementById('output-' + md5(testFile));
-            const durationEl = document.getElementById('duration-' + md5(testFile));
+        function runTest(testFile, testId) {
+            console.log('Exécution du test:', testFile, 'avec ID:', testId);
+            
+            const statusEl = document.getElementById('status-' + testId);
+            const outputEl = document.getElementById('output-' + testId);
+            const durationEl = document.getElementById('duration-' + testId);
+            
+            if (!statusEl || !outputEl || !durationEl) {
+                console.error('Éléments non trouvés pour le test ID:', testId);
+                return;
+            }
             
             statusEl.className = 'test-status running';
             statusEl.innerHTML = '⏳';
@@ -439,8 +509,16 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
             durationEl.innerHTML = '';
             
             fetch('?run=' + encodeURIComponent(testFile))
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Réponse reçue:', response.status);
+                    if (!response.ok) {
+                        throw new Error('Erreur HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Données reçues:', data);
+                    
                     if (data.success) {
                         statusEl.className = 'test-status success';
                         statusEl.innerHTML = '✓';
@@ -451,7 +529,7 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
                         testResults.error++;
                     }
                     
-                    outputEl.innerHTML = data.output;
+                    outputEl.innerHTML = '<pre>' + data.output.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
                     durationEl.innerHTML = `Durée : ${data.duration}ms`;
                     
                     testResults.total++;
@@ -459,9 +537,10 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
                     updateSummary();
                 })
                 .catch(error => {
+                    console.error('Erreur lors du test:', error);
                     statusEl.className = 'test-status error';
                     statusEl.innerHTML = '✗';
-                    outputEl.innerHTML = 'Erreur : ' + error.message;
+                    outputEl.innerHTML = '<pre>Erreur : ' + error.message + '</pre>';
                     testResults.error++;
                     testResults.total++;
                     updateSummary();
@@ -473,7 +552,9 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
             const tests = document.querySelectorAll('.test-card');
             tests.forEach((card, index) => {
                 setTimeout(() => {
-                    runTest(card.dataset.test);
+                    const testFile = card.dataset.test;
+                    const testId = card.dataset.testId;
+                    runTest(testFile, testId);
                 }, index * 500); // Délai entre chaque test
             });
         }
@@ -510,17 +591,6 @@ if (isset($_GET['run']) && isset($tests[$_GET['run']])) {
             window.open(testFile, '_blank');
         }
         
-        // Fonction MD5 simplifiée pour générer des IDs uniques
-        function md5(str) {
-            // Simple hash pour générer un ID unique (pas cryptographique)
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                const char = str.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
-            }
-            return Math.abs(hash).toString(16);
-        }
     </script>
 </body>
 </html>
