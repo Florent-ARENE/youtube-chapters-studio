@@ -1,12 +1,10 @@
 <?php
 /**
  * Gestionnaire des requêtes AJAX
- * Version 2.0.0 avec support Microsoft Stream
+ * Version 2.0.3 avec support Microsoft Stream
  * 
- * CHANGELOG v2.0.0 :
- * - Modification handleSaveChapters() pour supporter video_type et stream_data
- * - Ajout validation du type de vidéo (YouTube/Stream)
- * - Conservation de la compatibilité avec l'ancien format YouTube
+ * CHANGELOG v2.0.3 :
+ * - Correction double sanitization des chapitres
  */
 
 require_once 'config.php';
@@ -57,7 +55,7 @@ try {
 }
 
 /**
- * MODIFIÉ v2.0.0 : Sauvegarde des chapitres avec support YouTube et Stream
+ * MODIFIÉ v2.0.3 : Sauvegarde des chapitres avec support YouTube et Stream
  */
 function handleSaveChapters() {
     // Validation CSRF
@@ -90,8 +88,8 @@ function handleSaveChapters() {
         throw new Exception('Format de données invalide');
     }
     
-    // Nettoyer chaque chapitre
-    $chapters = array_map('sanitizeChapter', $chaptersRaw);
+    // MODIFIÉ v2.0.3 : Nettoyer chaque chapitre ET filtrer les valeurs null
+    $chapters = array_values(array_filter(array_map('sanitizeChapter', $chaptersRaw)));
     
     // Limiter le nombre de chapitres
     if (count($chapters) > MAX_CHAPTERS) {
@@ -124,7 +122,7 @@ function handleSaveChapters() {
     $videoTitle = mb_substr(sanitize($videoTitle), 0, 500);
 
     // Mettre à jour les variables de session
-    $_SESSION['video_type'] = $videoType; // NOUVEAU v2.0.0
+    $_SESSION['video_type'] = $videoType;
     $_SESSION['video_id'] = $videoId;
     $_SESSION['video_title'] = $videoTitle;
     $_SESSION['project_id'] = $projectId;
@@ -144,7 +142,7 @@ function handleSaveChapters() {
         }
     }
     
-    // MODIFIÉ v2.0.0 : Sauvegarder avec le type de vidéo
+    // MODIFIÉ v2.0.3 : Sauvegarder avec le type de vidéo (chapitres déjà sanitizés)
     saveChapterData($projectId, $videoType, $videoId, $videoTitle, $chapters, $streamData);
     
     // Générer les URLs
@@ -153,7 +151,7 @@ function handleSaveChapters() {
     echo json_encode([
         'success' => true,
         'project_id' => $projectId,
-        'video_type' => $videoType, // NOUVEAU v2.0.0
+        'video_type' => $videoType,
         'share_url' => $baseUrl . '/index.php?p=' . $projectId,
         'embed_url' => $baseUrl . '/viewer.php?p=' . $projectId
     ]);

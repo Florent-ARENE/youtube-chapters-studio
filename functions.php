@@ -1,14 +1,12 @@
 <?php
 /**
  * Fonctions métier - Chapter Studio
- * Version 2.0.0 - Ajout support Microsoft Stream
+ * Version 2.0.3 - Correction double encodage Stream
  * 
- * CHANGELOG v2.0.0 :
- * - Modification loadChapterData() pour charger video_type et stream_data
- * - Modification saveChapterData() pour sauvegarder video_type et stream_data
- * - Modification getAllProjects() pour inclure le type de vidéo
- * - Ajout buildStreamUrlWithTimestamp() pour construire les URLs Stream avec timestamp
- * - Conservation de toutes les fonctions YouTube existantes
+ * CHANGELOG v2.0.3 :
+ * - Ajout validateLoadedChapter() pour éviter double sanitization au chargement
+ * - Suppression double sanitization dans saveChapterData()
+ * - Correction affichage des chapitres Stream avec apostrophes
  */
 
 require_once 'config.php';
@@ -111,7 +109,8 @@ function buildStreamUrlWithTimestamp($streamData, $timeInSeconds) {
 }
 
 /**
- * MODIFIÉ v2.0.0 : Chargement sécurisé des données d'un projet avec support Stream
+ * MODIFIÉ v2.0.3 : Chargement sécurisé des données d'un projet avec support Stream
+ * Utilise validateLoadedChapter() au lieu de sanitizeChapter() pour éviter double encodage
  */
 function loadChapterData($projectId) {
     // Validation stricte de l'ID
@@ -142,13 +141,13 @@ function loadChapterData($projectId) {
         return null;
     }
     
-    // MODIFIÉ v2.0.0 : Sanitize les données chargées avec support Stream
+    // MODIFIÉ v2.0.3 : Validation sans re-sanitization pour éviter double encodage
     $cleanData = [
         'video_type' => in_array($data['video_type'] ?? '', [VIDEO_TYPE_YOUTUBE, VIDEO_TYPE_STREAM]) ? 
-                       $data['video_type'] : VIDEO_TYPE_YOUTUBE, // NOUVEAU v2.0.0
+                       $data['video_type'] : VIDEO_TYPE_YOUTUBE,
         'video_id' => sanitize($data['video_id'] ?? ''),
         'video_title' => sanitize($data['video_title'] ?? ''),
-        'chapters' => array_map('sanitizeChapter', $data['chapters'] ?? []),
+        'chapters' => array_values(array_filter(array_map('validateLoadedChapter', $data['chapters'] ?? []))),
         'created_at' => sanitize($data['created_at'] ?? ''),
         'updated_at' => sanitize($data['updated_at'] ?? '')
     ];
@@ -167,14 +166,15 @@ function loadChapterData($projectId) {
 }
 
 /**
- * MODIFIÉ v2.0.0 : Sauvegarde sécurisée des données d'un projet avec support Stream
+ * MODIFIÉ v2.0.3 : Sauvegarde sécurisée des données d'un projet avec support Stream
+ * Les chapitres sont déjà sanitizés dans ajax-handler.php, on ne les re-sanitize PAS ici
  * 
  * @param string $projectId ID du projet
- * @param string $videoType Type de vidéo (youtube/stream) - NOUVEAU v2.0.0
+ * @param string $videoType Type de vidéo (youtube/stream)
  * @param string $videoId ID de la vidéo
  * @param string $videoTitle Titre de la vidéo
- * @param array $chapters Tableau des chapitres
- * @param array|null $streamData Données Stream (uniquement si videoType = stream) - NOUVEAU v2.0.0
+ * @param array $chapters Tableau des chapitres (DÉJÀ SANITIZÉS)
+ * @param array|null $streamData Données Stream (uniquement si videoType = stream)
  */
 function saveChapterData($projectId, $videoType, $videoId, $videoTitle, $chapters, $streamData = null) {
     // Validations
@@ -182,12 +182,12 @@ function saveChapterData($projectId, $videoType, $videoId, $videoTitle, $chapter
         throw new Exception('ID de projet invalide');
     }
     
-    // NOUVEAU v2.0.0 : Validation du type de vidéo
+    // Validation du type de vidéo
     if (!in_array($videoType, [VIDEO_TYPE_YOUTUBE, VIDEO_TYPE_STREAM])) {
         throw new Exception('Type de vidéo invalide');
     }
     
-    // MODIFIÉ v2.0.0 : Validation selon le type
+    // Validation selon le type
     if ($videoType === VIDEO_TYPE_YOUTUBE && !validateYouTubeId($videoId)) {
         throw new Exception('ID de vidéo YouTube invalide');
     }
@@ -223,17 +223,17 @@ function saveChapterData($projectId, $videoType, $videoId, $videoTitle, $chapter
     // Charger les données existantes pour conserver la date de création
     $existingData = loadChapterData($projectId);
     
-    // MODIFIÉ v2.0.0 : Préparer les données avec support Stream
+    // MODIFIÉ v2.0.3 : Préparer les données SANS re-sanitizer les chapitres
     $data = [
-        'video_type' => $videoType, // NOUVEAU v2.0.0
+        'video_type' => $videoType,
         'video_id' => $videoId,
         'video_title' => mb_substr(sanitize($videoTitle), 0, 500),
-        'chapters' => array_map('sanitizeChapter', $chapters),
+        'chapters' => $chapters, // IMPORTANT : Déjà sanitizés dans ajax-handler.php
         'created_at' => $existingData['created_at'] ?? date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s')
     ];
     
-    // NOUVEAU v2.0.0 : Ajouter les données Stream si nécessaire
+    // Ajouter les données Stream si nécessaire
     if ($videoType === VIDEO_TYPE_STREAM && $streamData) {
         $data['stream_data'] = [
             'unique_id' => sanitize($streamData['unique_id']),
@@ -244,7 +244,7 @@ function saveChapterData($projectId, $videoType, $videoId, $videoTitle, $chapter
     }
     
     // Sauvegarder
-    $result = file_put_contents($filepath, json_encode($data, JSON_PRETTY_PRINT));
+    $result = file_put_contents($filepath, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     if ($result === false) {
         throw new Exception('Erreur lors de la sauvegarde');
     }
@@ -279,7 +279,7 @@ function getAllProjects() {
         if ($data) {
             $projects[] = [
                 'id' => $projectId,
-                'video_type' => $data['video_type'] ?? VIDEO_TYPE_YOUTUBE, // NOUVEAU v2.0.0
+                'video_type' => $data['video_type'] ?? VIDEO_TYPE_YOUTUBE,
                 'video_id' => $data['video_id'],
                 'video_title' => $data['video_title'] ?: 'Vidéo sans titre',
                 'chapters_count' => count($data['chapters']),
@@ -349,7 +349,8 @@ function loadElus() {
 }
 
 /**
- * MODIFIÉ v2.0.0 : Création du fichier viewer.php s'il n'existe pas (avec support Stream)
+ * MODIFIÉ v2.0.3 : Création du fichier viewer.php s'il n'existe pas (avec support Stream)
+ * Correction : Pas d'escapeHtml() pour éviter double encodage
  */
 function createViewerFile() {
     if (file_exists('viewer.php')) {
@@ -360,7 +361,7 @@ function createViewerFile() {
 /**
  * Viewer - Visionneuse de chapitres
  * Version 2.0.3 avec support YouTube et Microsoft Stream + autoplay
- * CORRECTION : Utilisation de embed_url au lieu de base_url
+ * CORRECTION : Utilisation de embed_url + pas de double encodage HTML
  */
 
 require_once "config.php";
@@ -463,7 +464,7 @@ $streamData = $data["stream_data"] ?? null;
                 div.className = \'chapter-item chapter-\' + (chapter.type || \'chapitre\');
                 div.innerHTML = `
                     <span class="chapter-time">${formatTime(chapter.time)}</span>
-                    <span class="chapter-title">${escapeHtml(chapter.title)}</span>
+                    <span class="chapter-title">${chapter.title}</span>
                 `;
                 div.onclick = () => navigateToTime(chapter.time);
                 list.appendChild(div);
@@ -479,7 +480,7 @@ $streamData = $data["stream_data"] ?? null;
                     player.playVideo();
                 }
             } else if (videoType === \'stream\') {
-                // CORRIGÉ v2.0.3 : Navigation Stream avec embed_url + autoplay
+                // Navigation Stream avec embed_url + autoplay
                 const iframe = document.getElementById(\'video-player\');
                 if (!iframe) {
                     console.error(\'Iframe non trouvé\');
@@ -546,12 +547,6 @@ $streamData = $data["stream_data"] ?? null;
                 return `${hours}:${minutes.toString().padStart(2, \'0\')}:${seconds.toString().padStart(2, \'0\')}`;
             }
             return `${minutes}:${seconds.toString().padStart(2, \'0\')}`;
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement(\'div\');
-            div.textContent = text;
-            return div.innerHTML;
         }
 
         // Afficher les chapitres dès le chargement si ce n\'est pas YouTube

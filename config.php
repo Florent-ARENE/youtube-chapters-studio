@@ -1,15 +1,7 @@
 <?php
 /**
  * Configuration et sécurité - Chapter Studio
- * Version 2.0.0 - Ajout support Microsoft Stream
- * 
- * CHANGELOG v2.0.0 :
- * - Ajout constantes VIDEO_TYPE_YOUTUBE et VIDEO_TYPE_STREAM
- * - Ajout fonction validateStreamId() pour valider les IDs Stream
- * - Ajout fonction validateStreamUrl() avec conversion automatique stream.aspx → embed.aspx
- * - Ajout fonction getStreamTitleFromData() pour extraction du titre depuis le nom de fichier
- * - Ajout fonction detectVideoType() pour détection automatique YouTube/Stream
- * - Modification sanitizeChapter() pour support du type de vidéo
+ * Version 2.0.3 - Ajout validateLoadedChapter
  */
 
 // Démarrage de la session sécurisée
@@ -41,7 +33,7 @@ define('MAX_CHAPTERS', 500);
 define('MAX_TITLE_LENGTH', 200);
 define('MAX_PROJECTS_PER_SESSION', 50);
 
-// NOUVEAU v2.0.0 : Types de vidéos supportés
+// Types de vidéos supportés
 define('VIDEO_TYPE_YOUTUBE', 'youtube');
 define('VIDEO_TYPE_STREAM', 'stream');
 
@@ -70,14 +62,14 @@ function validateYouTubeId($id) {
 }
 
 /**
- * NOUVEAU v2.0.0 : Validation de l'ID Stream (UniqueId du SharePoint ou MD5 du chemin)
+ * Validation de l'ID Stream
  */
 function validateStreamId($id) {
-    // Format GUID: 762bcc03-9b92-4fcf-a66c-e8367a76fb89
+    // Format GUID
     if (preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i', $id)) {
         return true;
     }
-    // Format MD5: 32 caractères hexadécimaux (pour les chemins de fichiers)
+    // Format MD5
     if (preg_match('/^[a-f0-9]{32}$/i', $id)) {
         return true;
     }
@@ -99,7 +91,6 @@ function validateYouTubeUrl($url) {
         }
     }
     
-    // Si c'est directement un ID
     if (validateYouTubeId($url)) {
         return $url;
     }
@@ -108,26 +99,16 @@ function validateYouTubeUrl($url) {
 }
 
 /**
- * NOUVEAU v2.0.0 : Validation et extraction d'URL Microsoft Stream
- * Supporte deux formats :
- * 1. Format /:v:/g/ avec UniqueId dans l'URL
- * 2. Format stream.aspx?id= avec chemin de fichier (CONVERSION AUTOMATIQUE)
- * 
- * @param string $url URL à valider
- * @return array|false Retourne un tableau avec les infos ou false
+ * Validation et extraction d'URL Microsoft Stream
  */
 function validateStreamUrl($url) {
-    // Format 1: /:v:/g/ avec UniqueId
-    // Exemple: https://tenant.sharepoint.com/:v:/g/personal/user/EQPMK3a...?nav=...
+    // Format 1: UniqueId
     $pattern1 = '/UniqueId=([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i';
     
-    // Format 2: stream.aspx avec chemin de fichier
-    // Exemple: https://tenant.sharepoint.com/personal/user/_layouts/15/stream.aspx?id=%2Fpersonal%2F...%2Efile.mp4
+    // Format 2: stream.aspx
     $pattern2 = '/stream\.aspx\?id=([^&]+)/';
     
-    // Vérifier Format 1 (UniqueId)
     if (preg_match($pattern1, $url, $matches)) {
-        // Extraire les infos de base
         preg_match('/https?:\/\/([^\/]+)/', $url, $domain);
         preg_match('/\/personal\/([^\/]+)\//', $url, $personal);
         
@@ -151,23 +132,14 @@ function validateStreamUrl($url) {
         ];
     }
     
-    // Vérifier Format 2 (stream.aspx avec chemin) - CONVERSION AUTOMATIQUE
     if (preg_match($pattern2, $url, $matches)) {
-        // CONVERSION AUTOMATIQUE : Remplacer stream.aspx par embed.aspx
         $embedUrl = str_replace('/stream.aspx?', '/embed.aspx?', $url);
-        
-        // Extraire le chemin du fichier pour obtenir le titre
         $filePath = urldecode($matches[1]);
         $fileName = basename($filePath);
-        
-        // Enlever l'extension et nettoyer le nom
         $fileName = preg_replace('/\.(mp4|avi|mov|wmv|flv|mkv)$/i', '', $fileName);
-        $fileName = str_replace(['_', '-'], ' ', $fileName); // Remplacer _ et - par espaces
-        
-        // Extraire un ID unique depuis le chemin (pour stockage)
+        $fileName = str_replace(['_', '-'], ' ', $fileName);
         $uniqueId = md5($filePath);
         
-        // Extraire l'URL de base sans paramètres
         preg_match('/^(https?:\/\/[^?]+)/', $url, $baseMatch);
         $baseUrl = $baseMatch[1] ?? $url;
         
@@ -186,26 +158,17 @@ function validateStreamUrl($url) {
 }
 
 /**
- * NOUVEAU v2.0.0 : Extrait un titre lisible depuis les données Stream
- * 
- * @param array $streamData Données Stream avec suggested_title
- * @return string Titre extrait ou par défaut
+ * Extrait un titre depuis les données Stream
  */
 function getStreamTitleFromData($streamData) {
-    // Si un titre suggéré existe (extrait du nom de fichier)
     if (isset($streamData['suggested_title']) && !empty($streamData['suggested_title'])) {
         return sanitize($streamData['suggested_title']);
     }
-    
-    // Sinon titre par défaut
     return 'Vidéo Microsoft Stream';
 }
 
 /**
- * NOUVEAU v2.0.0 : Détection du type de vidéo
- * 
- * @param string $url URL à analyser
- * @return string|false Type de vidéo (youtube/stream) ou false
+ * Détection du type de vidéo
  */
 function detectVideoType($url) {
     if (validateYouTubeUrl($url)) {
@@ -253,7 +216,7 @@ function isSecurePath($path, $baseDir) {
 }
 
 /**
- * Nettoyage d'un chapitre
+ * Nettoyage d'un chapitre (AVEC sanitization pour sauvegarde)
  */
 function sanitizeChapter($chapter) {
     if (!is_array($chapter)) {
@@ -278,6 +241,36 @@ function sanitizeChapter($chapter) {
     }
     
     return $clean;
+}
+
+/**
+ * NOUVEAU v2.0.3 : Validation d'un chapitre SANS re-sanitization (pour chargement JSON)
+ * CORRIGÉ : Décode les données pour réparer le double encodage des anciennes versions
+ */
+function validateLoadedChapter($chapter) {
+    if (!is_array($chapter)) {
+        return null;
+    }
+    
+    // Valider la structure ET décoder pour réparer le double encodage
+    $valid = [
+        'time' => isset($chapter['time']) ? max(0, intval($chapter['time'])) : 0,
+        'title' => html_entity_decode($chapter['title'] ?? '', ENT_QUOTES, 'UTF-8'), // Décoder pour réparer
+        'type' => in_array($chapter['type'] ?? '', ['chapitre', 'elu', 'vote']) ? 
+                  $chapter['type'] : 'chapitre'
+    ];
+    
+    if ($valid['type'] === 'elu' && isset($chapter['elu']) && is_array($chapter['elu'])) {
+        $valid['elu'] = [
+            'nom' => html_entity_decode($chapter['elu']['nom'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'fonction' => html_entity_decode($chapter['elu']['fonction'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'groupe' => html_entity_decode($chapter['elu']['groupe'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'description' => html_entity_decode($chapter['elu']['description'] ?? '', ENT_QUOTES, 'UTF-8')
+        ];
+        $valid['showInfo'] = isset($chapter['showInfo']) ? (bool)$chapter['showInfo'] : false;
+    }
+    
+    return $valid;
 }
 
 /**
