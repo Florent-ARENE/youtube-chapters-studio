@@ -1,6 +1,12 @@
 /**
- * YouTube Chapters Studio - JavaScript sécurisé
- * Version 1.4.0
+ * Chapter Studio - JavaScript principal
+ * Version 2.0.0 - Ajout support Microsoft Stream
+ * 
+ * CHANGELOG v2.0.0 :
+ * - Ajout variable videoType pour détecter YouTube/Stream
+ * - Modification captureCurrentTime() pour gérer Stream (saisie manuelle)
+ * - Ajout updateGlobalVariables() pour initialisation Stream
+ * - Reste du code YouTube INCHANGÉ
  */
 
 // Test de chargement du script
@@ -9,6 +15,8 @@ console.log('app.js chargé avec succès');
 // Variables globales depuis appConfig
 let chapters = window.appConfig ? window.appConfig.chapters || [] : [];
 let elus = window.appConfig ? window.appConfig.elus || [] : [];
+let videoType = window.appConfig ? window.appConfig.videoType || 'youtube' : 'youtube'; // NOUVEAU v2.0.0
+let streamData = window.appConfig ? window.appConfig.streamData || null : null; // NOUVEAU v2.0.0
 let player;
 let playerReady = false;
 let editingIndex = -1;
@@ -25,15 +33,17 @@ let selectedElu = null;
 // Debug: Afficher l'état initial
 console.log('=== app.js initialisé ===');
 console.log('appConfig existe:', typeof window.appConfig !== 'undefined');
+console.log('videoType:', videoType); // NOUVEAU v2.0.0
 console.log('currentVideoId:', currentVideoId);
 console.log('currentProjectId:', currentProjectId);
 console.log('csrfToken existe:', csrfToken ? 'oui' : 'non');
 console.log('Nombre de chapitres:', chapters.length);
 
-// Fonction pour mettre à jour les variables globales
+// NOUVEAU v2.0.0 : Fonction pour mettre à jour les variables globales (utilisé pour Stream)
 window.updateGlobalVariables = function(newConfig) {
     console.log('=== Mise à jour des variables globales ===');
     if (newConfig) {
+        videoType = newConfig.videoType || 'youtube';
         chapters = newConfig.chapters || [];
         elus = newConfig.elus || [];
         currentProjectId = newConfig.projectId || '';
@@ -42,8 +52,10 @@ window.updateGlobalVariables = function(newConfig) {
         csrfToken = newConfig.csrfToken || csrfToken;
         maxChapters = newConfig.maxChapters || maxChapters;
         maxTitleLength = newConfig.maxTitleLength || maxTitleLength;
+        streamData = newConfig.streamData || null;
         
         console.log('Variables mises à jour:');
+        console.log('- videoType:', videoType);
         console.log('- currentVideoId:', currentVideoId);
         console.log('- currentProjectId:', currentProjectId);
         console.log('- chapters.length:', chapters.length);
@@ -83,11 +95,12 @@ function autoSave() {
     }, 500);
 }
 
-// Fonction de sauvegarde AJAX sécurisée
+// MODIFIÉ v2.0.0 : Fonction de sauvegarde AJAX avec support Stream
 function saveChapters() {
     if (!currentVideoId || chapters.length > maxChapters) return;
     
     console.log('Sauvegarde en cours...', {
+        videoType: videoType, // NOUVEAU v2.0.0
         videoId: currentVideoId,
         projectId: currentProjectId,
         chaptersCount: chapters.length
@@ -129,14 +142,21 @@ function saveChapters() {
         showSaveNotification('Erreur réseau', 'error');
     };
     
+    // MODIFIÉ v2.0.0 : Ajout du type de vidéo et stream_data
     const params = new URLSearchParams({
         action: 'save_chapters',
         csrf_token: csrfToken,
+        video_type: videoType, // NOUVEAU v2.0.0
         video_id: currentVideoId,
         video_title: currentVideoTitle,
         chapters: JSON.stringify(chapters),
         project_id: currentProjectId || ''
     });
+    
+    // NOUVEAU v2.0.0 : Ajouter streamData si vidéo Stream
+    if (videoType === 'stream' && streamData) {
+        params.append('stream_data', JSON.stringify(streamData));
+    }
     
     xhr.send(params.toString());
 }
@@ -229,7 +249,8 @@ function onPlayerError(event) {
 
 // Charger l'API YouTube si nécessaire
 function loadYouTubeAPI() {
-    if (document.getElementById('youtube-player') && typeof YT === 'undefined') {
+    // MODIFIÉ v2.0.0 : Charger uniquement si YouTube
+    if (document.getElementById('youtube-player') && videoType === 'youtube' && typeof YT === 'undefined') {
         console.log('Chargement de l\'API YouTube...');
         const tag = document.createElement('script');
         tag.src = "https://www.youtube.com/iframe_api";
@@ -255,10 +276,18 @@ function parseTime(hours, minutes, seconds) {
     return parseInt(hours || 0) * 3600 + parseInt(minutes || 0) * 60 + parseInt(seconds || 0);
 }
 
-// Gestion du temps
+// MODIFIÉ v2.0.0 : Gestion du temps avec support Stream
 window.captureCurrentTime = function() {
-    console.log('Capture du temps - playerReady:', playerReady, 'player:', player);
+    console.log('Capture du temps - videoType:', videoType, 'playerReady:', playerReady, 'player:', player);
     
+    // NOUVEAU v2.0.0 : Pour Stream, pas de capture auto
+    if (videoType === 'stream') {
+        alert('⚠️ La capture automatique n\'est pas disponible pour Microsoft Stream.\n\nVeuillez saisir manuellement le timestamp en regardant la vidéo.');
+        document.getElementById('hours').focus();
+        return;
+    }
+    
+    // Code YouTube original (INCHANGÉ)
     if (!playerReady) {
         alert('Le lecteur YouTube n\'est pas encore prêt. Attendez quelques secondes.');
         return;
@@ -591,9 +620,82 @@ window.deleteChapter = function(index) {
     }
 }
 
+// CORRIGÉ v2.0.2 : Navigation avec autoplay Stream
 window.goToTime = function(seconds) {
-    if (playerReady && player && player.seekTo) {
-        player.seekTo(seconds, true);
+    console.log('goToTime appelé:', seconds, 'secondes - videoType:', videoType);
+    
+    if (videoType === 'youtube') {
+        // Navigation YouTube (code original)
+        if (playerReady && player && player.seekTo) {
+            player.seekTo(seconds, true);
+            if (player.playVideo) {
+                player.playVideo();
+            }
+        } else {
+            console.warn('Player YouTube non prêt');
+        }
+    } else if (videoType === 'stream') {
+        // Navigation Stream avec autoplay
+        const iframe = document.getElementById('stream-player');
+        if (!iframe) {
+            console.error('Iframe stream-player non trouvé');
+            return;
+        }
+        
+        if (!streamData) {
+            console.error('streamData non défini');
+            return;
+        }
+        
+        console.log('streamData disponible:', streamData);
+        
+        // Construire l'objet de navigation
+        const navObj = {
+            playbackOptions: {
+                startTimeInSeconds: seconds,
+                timestampedLinkReferrerInfo: {
+                    scenario: "ChapterShare",
+                    additionalInfo: { isSharedChapterAuto: false }
+                }
+            },
+            referralInfo: {
+                referralApp: "StreamWebApp",
+                referralView: "ShareChapterLink",
+                referralAppPlatform: "Web",
+                referralMode: "view"
+            }
+        };
+        
+        // Encoder en JSON puis Base64
+        const navJson = JSON.stringify(navObj);
+        const navEncoded = btoa(navJson);
+        
+        // NOUVEAU v2.0.2 : Paramètre embed pour l'autoplay
+        const embedParam = encodeURIComponent('{"af":true,"ust":true}');
+        
+        // Construire la nouvelle URL embed.aspx avec nav + embed
+        let newUrl = streamData.embed_url;
+        
+        // Si embed_url contient déjà des paramètres, ajouter &nav=, sinon ?nav=
+        if (newUrl.includes('?')) {
+            newUrl += '&nav=' + encodeURIComponent(navEncoded);
+        } else {
+            newUrl += '?nav=' + encodeURIComponent(navEncoded);
+        }
+        
+        // NOUVEAU v2.0.2 : Ajouter le paramètre embed pour l'autoplay
+        newUrl += '&embed=' + embedParam;
+        
+        // Ajouter &ga=1 si ce n'est pas déjà présent
+        if (!newUrl.includes('ga=')) {
+            newUrl += '&ga=1';
+        }
+        
+        console.log('Navigation Stream vers:', seconds, 's');
+        console.log('Nouvelle URL iframe:', newUrl);
+        
+        // Recharger l'iframe avec la nouvelle URL
+        iframe.src = newUrl;
     }
 }
 
